@@ -1,9 +1,12 @@
 import { useMemo } from 'react'
 import { useAppData } from '../../context/AppDataContext'
+import { useAuth } from '../../context/AuthContext'
+import { Redacted } from '../ui/Redacted'
 import { B, weekKey } from '../../lib/utils'
 
 export default function Dashboard() {
   const { logs, installers } = useAppData()
+  const { isGuest } = useAuth()
 
   const completeLogs = useMemo(
     () => logs.filter(r => r.status === 'Complete' && r.sqft && r.sqft > 0 && r.mins && r.mins > 0),
@@ -120,7 +123,7 @@ export default function Dashboard() {
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5, fontSize: 13 }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: r.color, display: 'inline-block' }} />
-                <span style={{ fontWeight: 500 }}>{r.name}</span>
+                <span style={{ fontWeight: 500 }}>{isGuest ? <Redacted>{r.name}</Redacted> : r.name}</span>
               </span>
               <span style={{ color: B.textSec }}>
                 {((r.sqft / totalSqftAll) * 100).toFixed(1)}% · {r.sqft.toFixed(1)} sqft

@@ -3,16 +3,9 @@ import { useAppData } from '../../context/AppDataContext'
 import { useAuth } from '../../context/AuthContext'
 import { WarnModal } from '../ui/WarnModal'
 import { Toast } from '../ui/Toast'
+import { Redacted } from '../ui/Redacted'
 import { B, CC, calcSqft, fmtDate, fmtDue, fmtTime, daysUntil } from '../../lib/utils'
 import type { WarnConfig, Project, Panel } from '../../lib/types'
-
-function Redacted({ children }: { children: string }) {
-  return (
-    <span style={{ background: '#3A3A3C', color: 'transparent', borderRadius: 3, userSelect: 'none' }}>
-      {children}
-    </span>
-  )
-}
 
 export default function Projects() {
   const { projects, logs, activeJobs, installers, updateProject, updateProjectType, updateDueDate, archiveProject, clockIn } = useAppData()

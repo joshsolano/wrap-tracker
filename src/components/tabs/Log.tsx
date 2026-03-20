@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useAppData } from '../../context/AppDataContext'
 import { useAuth } from '../../context/AuthContext'
+import { Redacted } from '../ui/Redacted'
 import { WarnModal } from '../ui/WarnModal'
 import { Toast } from '../ui/Toast'
 import { B, CC, fmtDate, fmtClock, fmtTime } from '../../lib/utils'
@@ -63,7 +64,7 @@ export default function LogTab() {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, flex: 1 }}>
-          {['All', ...installers.map(i => i.name.split(' ')[0])].map(f => (
+          {['All', ...(isGuest ? [] : installers.map(i => i.name.split(' ')[0]))].map(f => (
             <button
               key={f}
               onClick={() => {
@@ -181,7 +182,7 @@ export default function LogTab() {
                   )}
                 </div>
                 <div style={{ fontSize: 12, color: B.textTer }}>
-                  {r.project_name} · {fmtDate(r.start_ts)}
+                  {isGuest ? <Redacted>{r.project_name ?? ''}</Redacted> : r.project_name} · {fmtDate(r.start_ts)}
                   {r.start_ts && r.finish_ts ? ` · ${fmtClock(r.start_ts)} – ${fmtClock(r.finish_ts)}` : ''}
                 </div>
               </div>

@@ -2,16 +2,9 @@ import { useMemo, useState } from 'react'
 import { useAppData } from '../../context/AppDataContext'
 import { useAuth } from '../../context/AuthContext'
 import { MiniConfetti } from '../ui/Confetti'
+import { Redacted } from '../ui/Redacted'
 import { B, CC, isBirthday, fmtDate, fmtTime } from '../../lib/utils'
 import type { Log } from '../../lib/types'
-
-function Redacted({ children }: { children: string }) {
-  return (
-    <span style={{ background: '#3A3A3C', color: 'transparent', borderRadius: 3, userSelect: 'none' }}>
-      {children}
-    </span>
-  )
-}
 
 // ─── ProfilesList ─────────────────────────────────────────────────────────────
 

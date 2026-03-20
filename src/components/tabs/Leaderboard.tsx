@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useAppData } from '../../context/AppDataContext'
+import { useAuth } from '../../context/AuthContext'
 import { MiniConfetti } from '../ui/Confetti'
+import { Redacted } from '../ui/Redacted'
 import { B, CC, fmtTime } from '../../lib/utils'
 import type { Log, Installer } from '../../lib/types'
 
@@ -72,6 +74,8 @@ export default function Leaderboard() {
   const byProj    = [...board].sort((a,b) => b.projectCount - a.projectCount)
   const byHours   = [...board].sort((a,b) => b.mins - a.mins)
 
+  const { isGuest } = useAuth()
+
   const medals = ['#F5C400','#B0B8C1','#CD7F32']
   const mLabel = ['1ST','2ND','3RD']
 
@@ -103,7 +107,7 @@ export default function Leaderboard() {
                   <div style={{ width:isFirst?52:44,height:isFirst?52:44,borderRadius:'50%',background:r.installer.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:isFirst?22:16,fontWeight:800,color:B.bg,margin:'0 auto 8px' }}>
                     {r.installer.name.charAt(0)}
                   </div>
-                  <div style={{ fontSize:isFirst?14:13,fontWeight:700,marginBottom:2 }}>{r.installer.name.split(' ')[0]}</div>
+                  <div style={{ fontSize:isFirst?14:13,fontWeight:700,marginBottom:2 }}>{isGuest ? <Redacted>{r.installer.name.split(' ')[0]}</Redacted> : r.installer.name.split(' ')[0]}</div>
                   <div style={{ fontSize:isFirst?22:18,fontWeight:800,color:medals[ri] }}>{r.sqft.toFixed(1)}</div>
                   <div style={{ fontSize:10,color:B.textTer,marginTop:1 }}>sqft</div>
                   {isFirst && <div style={{ fontSize:11,color:B.textTer,marginTop:5 }}>{r.avgSqftHr?.toFixed(1) ?? '--'} sqft/hr</div>}
@@ -126,7 +130,7 @@ export default function Leaderboard() {
           {board.map(r => (
             <span key={r.installer.id} style={{ display:'flex',alignItems:'center',gap:5,fontSize:11 }}>
               <span style={{ width:8,height:8,borderRadius:'50%',background:r.installer.color,display:'inline-block' }} />
-              <span style={{ color:B.textTer }}>{r.installer.name.split(' ')[0]}</span>
+              <span style={{ color:B.textTer }}>{isGuest ? <Redacted>{r.installer.name.split(' ')[0]}</Redacted> : r.installer.name.split(' ')[0]}</span>
               <span style={{ color:B.textSec,fontWeight:700 }}>{r.pct.toFixed(0)}%</span>
             </span>
           ))}
@@ -139,7 +143,7 @@ export default function Leaderboard() {
             <div style={{ fontSize:13,fontWeight:800,color:medals[i]??B.textTer,minWidth:24,textAlign:'center' }}>{i+1}</div>
             <div style={{ width:38,height:38,borderRadius:'50%',background:r.installer.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,fontWeight:800,color:B.bg,flexShrink:0 }}>{r.installer.name.charAt(0)}</div>
             <div style={{ flex:1,minWidth:0 }}>
-              <div style={{ fontSize:14,fontWeight:700 }}>{r.installer.name}</div>
+              <div style={{ fontSize:14,fontWeight:700 }}>{isGuest ? <Redacted>{r.installer.name}</Redacted> : r.installer.name}</div>
               <div style={{ display:'flex',gap:10,marginTop:3,flexWrap:'wrap' }}>
                 <span style={{ fontSize:11,color:B.textTer }}>{r.panels} panels</span>
                 <span style={{ fontSize:11,color:B.textTer }}>{fmtTime(r.mins)}</span>
@@ -172,7 +176,7 @@ export default function Leaderboard() {
               <div style={{ display:'flex',alignItems:'center',gap:10 }}>
                 <div style={{ width:32,height:32,borderRadius:'50%',background:c.v.installer.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:800,color:B.bg,flexShrink:0 }}>{c.v.installer.name.charAt(0)}</div>
                 <div>
-                  <div style={{ fontSize:12,fontWeight:700 }}>{c.v.installer.name.split(' ')[0]}</div>
+                  <div style={{ fontSize:12,fontWeight:700 }}>{isGuest ? <Redacted>{c.v.installer.name.split(' ')[0]}</Redacted> : c.v.installer.name.split(' ')[0]}</div>
                   <div style={{ fontSize:14,fontWeight:800,color:B.yellow }}>{c.val}</div>
                 </div>
               </div>
@@ -181,7 +185,7 @@ export default function Leaderboard() {
         </div>
       )}
 
-      {funFacts.length > 0 && (
+      {!isGuest && funFacts.length > 0 && (
         <div style={{ background:B.surface,borderRadius:14,padding:16,border:`1px solid ${B.border}`,marginBottom:20 }}>
           <div style={{ fontSize:11,color:B.textTer,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:12 }}>Fun facts</div>
           {funFacts.map((f,i) => (
@@ -211,7 +215,7 @@ export default function Leaderboard() {
                   <div style={{ fontSize:12,fontWeight:800,color:[CC,'#B0B8C1','#CD7F32'][i]??B.textTer,minWidth:20,textAlign:'center' }}>{i+1}</div>
                   <div style={{ width:32,height:32,borderRadius:'50%',background:r.installer.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:800,color:B.bg,flexShrink:0 }}>{r.installer.name.charAt(0)}</div>
                   <div style={{ flex:1,minWidth:0 }}>
-                    <div style={{ fontSize:13,fontWeight:700 }}>{r.installer.name}</div>
+                    <div style={{ fontSize:13,fontWeight:700 }}>{isGuest ? <Redacted>{r.installer.name}</Redacted> : r.installer.name}</div>
                     <div style={{ display:'flex',gap:8,marginTop:2 }}>
                       <span style={{ fontSize:11,color:B.textTer }}>{r.panels} panels</span>
                       <span style={{ fontSize:11,color:B.textTer }}>{fmtTime(r.mins)}</span>

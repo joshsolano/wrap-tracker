@@ -12,6 +12,7 @@ import Leaderboard from './components/tabs/Leaderboard'
 import Profiles from './components/tabs/Profiles'
 import Panels from './components/tabs/Panels'
 import Settings from './components/tabs/Settings'
+import { Redacted } from './components/ui/Redacted'
 import { B, isBirthday } from './lib/utils'
 
 const TABS = ['Clock In', 'Dashboard', 'Log', 'Projects', 'Leaderboard', 'Profiles', 'Panels', 'Settings'] as const
@@ -68,7 +69,7 @@ function AppShell() {
     >
       <ConnectionBanner />
 
-      {birthday && (
+      {birthday && !isGuest && (
         <div
           style={{
             background: '#1A0D00',
@@ -129,7 +130,7 @@ function AppShell() {
                   flexShrink: 0,
                 }}
               />
-              {(j.installer?.name.split(' ')[0] ?? 'Installer')} → {j.panel?.name}
+              {isGuest ? <Redacted>{j.installer?.name.split(' ')[0] ?? 'Installer'}</Redacted> : (j.installer?.name.split(' ')[0] ?? 'Installer')} → {j.panel?.name}
             </span>
           ))}
         </div>
