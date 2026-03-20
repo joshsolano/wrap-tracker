@@ -22,7 +22,7 @@ export default function LoginScreen() {
     <div style={{ minHeight:'100vh',background:B.bg,display:'flex',alignItems:'center',justifyContent:'center',padding:20 }}>
       <div style={{ width:'100%',maxWidth:380 }}>
         <div style={{ fontSize:28,fontWeight:800,marginBottom:4,letterSpacing:'-0.03em' }}>
-          <span style={{ color:B.yellow }}>WRAP</span> GFX
+          <span style={{ color:B.yellow }}>WRAP</span><span style={{ color:B.text }}> GFX</span>
         </div>
         <div style={{ fontSize:14,color:B.textTer,marginBottom:32 }}>Sign in to continue</div>
         <form onSubmit={handleSubmit}>

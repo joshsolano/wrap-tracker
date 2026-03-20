@@ -18,7 +18,7 @@ const TABS = ['Clock In', 'Dashboard', 'Log', 'Projects', 'Leaderboard', 'Profil
 type Tab = typeof TABS[number]
 
 function AppShell() {
-  const { signOut } = useAuth()
+  const { signOut, installer: me, isAdmin } = useAuth()
   const { installers, activeJobs } = useAppData()
   const [tab, setTab] = useState<Tab>('Clock In')
   const [tabFade, setTabFade] = useState(true)
@@ -135,18 +135,41 @@ function AppShell() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
+            gap: 12,
           }}
         >
-          <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.03em' }}>
-            <span style={{ color: B.yellow }}>WRAP</span> GFX
+          <div>
+            <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.03em' }}>
+              <span style={{ color: B.yellow }}>WRAP</span> GFX
+            </div>
+            <div style={{ fontSize: 12, color: B.textTer, marginTop: 2 }}>
+              {new Date().toLocaleDateString('en-US', {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+              })}
+            </div>
           </div>
-          <div style={{ fontSize: 12, color: B.textTer }}>
-            {new Date().toLocaleDateString('en-US', {
-              weekday: 'short',
-              month: 'short',
-              day: 'numeric',
-            })}
-          </div>
+
+          {me && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+              <div style={{ width: 28, height: 28, borderRadius: '50%', background: me.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: B.bg, flexShrink: 0 }}>
+                {me.name.charAt(0)}
+              </div>
+              <div style={{ lineHeight: 1.25 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: B.text }}>{me.name.split(' ')[0]}</div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: isAdmin ? B.yellow : B.textTer, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  {isAdmin ? 'Admin' : 'Installer'}
+                </div>
+              </div>
+              <button
+                onClick={signOut}
+                style={{ fontSize: 11, color: B.textTer, background: 'none', border: `1px solid ${B.border}`, borderRadius: 8, padding: '4px 8px', cursor: 'pointer', fontWeight: 600, flexShrink: 0 }}
+              >
+                Sign out
+              </button>
+            </div>
+          )}
         </div>
 
         <div style={{ padding: '14px 20px 0' }}>
