@@ -11,7 +11,7 @@ interface AuthCtx {
   loading: boolean
   signIn: (email: string, password: string) => Promise<{ error: string | null }>
   signOut: () => Promise<void>
-  enterGuestMode: () => void
+  enterGuestMode: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthCtx | null>(null)
@@ -36,14 +36,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s)
-      if (s) fetchInstaller(s.user.id)
-      else setLoading(false)
+      if (s) {
+        if (s.user.is_anonymous) {
+          setIsGuest(true)
+          setInstaller(null)
+          setLoading(false)
+        } else {
+          fetchInstaller(s.user.id)
+        }
+      } else {
+        setLoading(false)
+      }
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
       setSession(s)
-      if (s) { setIsGuest(false); fetchInstaller(s.user.id) }
-      else { setInstaller(null); setLoading(false) }
+      if (s) {
+        if (s.user.is_anonymous) {
+          setIsGuest(true)
+          setInstaller(null)
+          setLoading(false)
+        } else {
+          setIsGuest(false)
+          fetchInstaller(s.user.id)
+        }
+      } else {
+        setInstaller(null)
+        setIsGuest(false)
+        setLoading(false)
+      }
     })
 
     return () => subscription.unsubscribe()
@@ -60,8 +81,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setInstaller(null); setSession(null)
   }
 
-  function enterGuestMode() {
+  async function enterGuestMode() {
+    setLoading(true)
     setIsGuest(true)
+    // Sign in anonymously so Supabase RLS policies allow data reads.
+    // Requires anonymous sign-in to be enabled in the Supabase dashboard
+    // (Authentication → Providers → Anonymous).
+    // onAuthStateChange will set loading=false once the session is ready.
+    await supabase.auth.signInAnonymously()
   }
 
   return (

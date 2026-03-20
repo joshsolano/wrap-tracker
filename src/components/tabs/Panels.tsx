@@ -28,7 +28,7 @@ export default function Panels() {
     updateDueDate,
     updateProjectType,
   } = useAppData()
-  const { isAdmin } = useAuth()
+  const { isAdmin, isGuest } = useAuth()
 
   const [libProjectId, setLibProjectId] = useState<string | null>(null)
   const [libNewProjectName, setLibNewProjectName] = useState('')
@@ -398,15 +398,19 @@ export default function Panels() {
               </div>
             ) : (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <button
-                  onClick={() => {
-                    setEditingDue(proj.id)
-                    setEditingDueVal(proj.due_date ?? '')
-                  }}
-                  style={{ background: 'none', border: 'none', color: B.textTer, fontSize: 12, cursor: 'pointer', padding: 0 }}
-                >
-                  {due ? 'Due: ' + fmtDue(due) : 'Set due date'} ✎
-                </button>
+                {isGuest ? (
+                  <span style={{ fontSize: 12, color: B.textTer }}>{due ? 'Due: ' + fmtDue(due) : 'No due date'}</span>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setEditingDue(proj.id)
+                      setEditingDueVal(proj.due_date ?? '')
+                    }}
+                    style={{ background: 'none', border: 'none', color: B.textTer, fontSize: 12, cursor: 'pointer', padding: 0 }}
+                  >
+                    {due ? 'Due: ' + fmtDue(due) : 'Set due date'} ✎
+                  </button>
+                )}
                 {isAdmin && (
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button

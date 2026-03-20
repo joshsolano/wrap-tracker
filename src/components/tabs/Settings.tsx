@@ -10,7 +10,7 @@ interface Props { onSignOut: () => void }
 
 export default function Settings({ onSignOut }: Props) {
   const { installers, logs, activeJobs, updateInstaller, deactivateInstaller, addInstallerViaEdge } = useAppData()
-  const { isAdmin, installer: me } = useAuth()
+  const { isAdmin, installer: me, isGuest } = useAuth()
 
   const [warn, setWarn] = useState<WarnConfig | null>(null)
   const [toast, setToast] = useState('')
@@ -171,8 +171,8 @@ export default function Settings({ onSignOut }: Props) {
             <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',padding:'14px 18px' }}>
               <div style={{ display:'flex',alignItems:'center',gap:12 }}>
                 <div style={{ position:'relative' }}>
-                  <div onClick={() => setColorPickerId(colorPickerId===inst.id?null:inst.id)}
-                    style={{ width:32,height:32,borderRadius:'50%',background:inst.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:800,color:B.bg,cursor:(isAdmin||inst.id===me?.id)?'pointer':'default' }}>
+                  <div onClick={() => !isGuest && (isAdmin||inst.id===me?.id) && setColorPickerId(colorPickerId===inst.id?null:inst.id)}
+                    style={{ width:32,height:32,borderRadius:'50%',background:inst.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:800,color:B.bg,cursor:(!isGuest&&(isAdmin||inst.id===me?.id))?'pointer':'default' }}>
                     {inst.name.charAt(0)}
                   </div>
                   {colorPickerId===inst.id && (
@@ -198,10 +198,14 @@ export default function Settings({ onSignOut }: Props) {
                       {(isAdmin||inst.id===me?.id) && <button onClick={() => { setEditingNameId(inst.id); setEditingNameVal(inst.name) }} style={{ background:'none',border:'none',color:B.textTer,fontSize:12,cursor:'pointer',padding:0 }}>✎</button>}
                     </div>
                   )}
-                  <button onClick={() => { setEditingBdayId(editingBdayId===inst.id?null:inst.id); setEditingBdayVal(inst.birthday??'') }}
-                    style={{ background:'none',border:'none',padding:0,fontSize:11,color:editingBdayId===inst.id?B.yellow:B.textTer,textAlign:'left',cursor:'pointer' }}>
-                    {editingBdayId===inst.id ? 'Editing birthday…' : `Birthday: ${inst.birthday||'not set'} ✎`}
-                  </button>
+                  {isGuest ? (
+                    <span style={{ fontSize:11, color:B.textTer }}>{`Birthday: ${inst.birthday||'not set'}`}</span>
+                  ) : (
+                    <button onClick={() => { setEditingBdayId(editingBdayId===inst.id?null:inst.id); setEditingBdayVal(inst.birthday??'') }}
+                      style={{ background:'none',border:'none',padding:0,fontSize:11,color:editingBdayId===inst.id?B.yellow:B.textTer,textAlign:'left',cursor:'pointer' }}>
+                      {editingBdayId===inst.id ? 'Editing birthday…' : `Birthday: ${inst.birthday||'not set'} ✎`}
+                    </button>
+                  )}
                 </div>
               </div>
               {isAdmin && inst.id !== me?.id && (
