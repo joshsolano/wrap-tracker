@@ -212,7 +212,7 @@ export default function Projects() {
               {isExp && (
                 <div style={{ borderTop:`1px solid ${B.border}`,padding:'12px 16px 16px' }}>
                   <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12,flexWrap:'wrap',gap:8 }}>
-                    {editingDue === p.id ? (
+                    {!isGuest && editingDue === p.id ? (
                       <div style={{ display:'flex',gap:6,alignItems:'center' }}>
                         <input type="date" value={editingDueVal} onChange={e => setEditingDueVal(e.target.value)}
                           style={{ padding:'5px 8px',fontSize:12,borderRadius:8,background:B.surface2,color:B.text,border:'none',outline:'none',colorScheme:'dark' }} />
@@ -220,10 +220,13 @@ export default function Projects() {
                         <button onClick={() => setEditingDue(null)} style={{ background:'transparent',color:B.textTer,border:`1px solid ${B.border}`,borderRadius:8,padding:'5px 8px',fontSize:12,cursor:'pointer' }}>×</button>
                       </div>
                     ) : (
-                      <button onClick={() => { setEditingDue(p.id); setEditingDueVal(p.due_date ?? '') }}
-                        style={{ background:'none',border:'none',color:B.textSec,fontSize:12,cursor:'pointer',padding:0 }}>
-                        {p.due_date ? 'Due: ' + fmtDue(p.due_date) : 'Set due date'} ✎
-                      </button>
+                      <span style={{ fontSize:12,color:B.textSec,padding:0 }}>
+                        {p.due_date ? 'Due: ' + fmtDue(p.due_date) : 'No due date'}
+                        {!isGuest && (
+                          <button onClick={() => { setEditingDue(p.id); setEditingDueVal(p.due_date ?? '') }}
+                            style={{ background:'none',border:'none',color:B.textTer,fontSize:12,cursor:'pointer',padding:'0 0 0 4px' }}>✎</button>
+                        )}
+                      </span>
                     )}
                     {isAdmin && (
                       <div style={{ display:'flex',gap:8 }}>
@@ -255,7 +258,7 @@ export default function Projects() {
                             {isIP && <div style={{ fontSize:11,color:B.orange,marginTop:1 }}>In progress{ipInst ? ' — ' + ipInst.name.split(' ')[0] : ''}</div>}
                           </div>
                           {panel.height_in && panel.width_in && <div style={{ fontSize:11,color:B.textTer,flexShrink:0 }}>{panel.height_in}"×{panel.width_in}"</div>}
-                          {!isDone && !isIP && (
+                          {!isGuest && !isDone && !isIP && (
                             <button
                               onClick={() => handleQuickClockIn(panel, p)}
                               disabled={quickBusy}
