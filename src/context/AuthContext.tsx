@@ -7,9 +7,11 @@ interface AuthCtx {
   session: Session | null
   installer: Installer | null
   isAdmin: boolean
+  isGuest: boolean
   loading: boolean
   signIn: (email: string, password: string) => Promise<{ error: string | null }>
   signOut: () => Promise<void>
+  enterGuestMode: () => void
 }
 
 const AuthContext = createContext<AuthCtx | null>(null)
@@ -17,6 +19,7 @@ const AuthContext = createContext<AuthCtx | null>(null)
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [installer, setInstaller] = useState<Installer | null>(null)
+  const [isGuest, setIsGuest] = useState(false)
   const [loading, setLoading] = useState(true)
 
   async function fetchInstaller(userId: string) {
@@ -39,7 +42,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
       setSession(s)
-      if (s) fetchInstaller(s.user.id)
+      if (s) { setIsGuest(false); fetchInstaller(s.user.id) }
       else { setInstaller(null); setLoading(false) }
     })
 
@@ -52,12 +55,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function signOut() {
+    setIsGuest(false)
     await supabase.auth.signOut()
     setInstaller(null); setSession(null)
   }
 
+  function enterGuestMode() {
+    setIsGuest(true)
+  }
+
   return (
-    <AuthContext.Provider value={{ session, installer, isAdmin: installer?.role === 'admin', loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ session, installer, isAdmin: installer?.role === 'admin', isGuest, loading, signIn, signOut, enterGuestMode }}>
       {children}
     </AuthContext.Provider>
   )

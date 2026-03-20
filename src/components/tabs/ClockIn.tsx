@@ -9,7 +9,7 @@ import type { WarnConfig, JobType } from '../../lib/types'
 import ManualEntryModal from './ManualEntryModal'
 
 export default function ClockIn() {
-  const { installer: me } = useAuth()
+  const { installer: me, isGuest } = useAuth()
   const { installers, projects, activeJobs, logs, clockIn, clockOut, discardSession } = useAppData()
 
   const [selectedInstallerId, setSelectedInstallerId] = useState<string | null>(me?.id ?? null)
@@ -227,19 +227,27 @@ export default function ClockIn() {
               ))}
             </div>
 
-            <button
-              onClick={handleClockOut}
-              disabled={busy}
-              style={{ width: '100%', background: activeJob.is_color_change ? CC : B.yellow, color: activeJob.is_color_change ? B.text : B.bg, border: 'none', borderRadius: 14, padding: 18, fontSize: 17, fontWeight: 800, marginBottom: 10, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1 }}
-            >
-              {busy ? 'Clocking out…' : 'Clock Out'}
-            </button>
-            <button
-              onClick={handleDiscard}
-              style={{ width: '100%', background: 'transparent', color: B.textTer, border: `1px solid ${B.border}`, borderRadius: 14, padding: 13, fontSize: 14, cursor: 'pointer' }}
-            >
-              Discard session
-            </button>
+            {isGuest ? (
+              <div style={{ padding: '12px 14px', background: B.surface2, borderRadius: 12, fontSize: 13, color: B.textTer, textAlign: 'center' }}>
+                View-only mode — sign in to clock out
+              </div>
+            ) : (
+              <>
+                <button
+                  onClick={handleClockOut}
+                  disabled={busy}
+                  style={{ width: '100%', background: activeJob.is_color_change ? CC : B.yellow, color: activeJob.is_color_change ? B.text : B.bg, border: 'none', borderRadius: 14, padding: 18, fontSize: 17, fontWeight: 800, marginBottom: 10, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1 }}
+                >
+                  {busy ? 'Clocking out…' : 'Clock Out'}
+                </button>
+                <button
+                  onClick={handleDiscard}
+                  style={{ width: '100%', background: 'transparent', color: B.textTer, border: `1px solid ${B.border}`, borderRadius: 14, padding: 13, fontSize: 14, cursor: 'pointer' }}
+                >
+                  Discard session
+                </button>
+              </>
+            )}
           </div>
 
           {todayDone.length > 0 && (
@@ -438,20 +446,27 @@ export default function ClockIn() {
             </div>
           )}
 
-          <button
-            onClick={handleClockIn}
-            disabled={!selectedInstallerId || !selectedProjectId || !selectedPanelId || busy}
-            style={{ width: '100%', background: !selectedInstallerId || !selectedProjectId || !selectedPanelId || busy ? B.surface2 : isCC ? CC : B.yellow, color: !selectedInstallerId || !selectedProjectId || !selectedPanelId || busy ? B.textTer : isCC ? B.text : B.bg, border: 'none', borderRadius: 14, padding: 18, fontSize: 17, fontWeight: 800, marginBottom: 12, cursor: busy ? 'default' : 'pointer' }}
-          >
-            {busy ? 'Clocking in…' : !selectedInstallerId || !selectedProjectId || !selectedPanelId ? 'Select installer, project & panel' : `Clock In${isCC ? ' — Color Change' : ''}`}
-          </button>
-
-          <button
-            onClick={() => setShowManual(true)}
-            style={{ width: '100%', background: 'transparent', color: B.textTer, border: `1px solid ${B.border}`, borderRadius: 14, padding: 13, fontSize: 14, cursor: 'pointer' }}
-          >
-            + Manual entry
-          </button>
+          {isGuest ? (
+            <div style={{ padding: '14px 16px', background: B.surface2, borderRadius: 14, fontSize: 13, color: B.textTer, textAlign: 'center' }}>
+              View-only mode — sign in to clock in
+            </div>
+          ) : (
+            <>
+              <button
+                onClick={handleClockIn}
+                disabled={!selectedInstallerId || !selectedProjectId || !selectedPanelId || busy}
+                style={{ width: '100%', background: !selectedInstallerId || !selectedProjectId || !selectedPanelId || busy ? B.surface2 : isCC ? CC : B.yellow, color: !selectedInstallerId || !selectedProjectId || !selectedPanelId || busy ? B.textTer : isCC ? B.text : B.bg, border: 'none', borderRadius: 14, padding: 18, fontSize: 17, fontWeight: 800, marginBottom: 12, cursor: busy ? 'default' : 'pointer' }}
+              >
+                {busy ? 'Clocking in…' : !selectedInstallerId || !selectedProjectId || !selectedPanelId ? 'Select installer, project & panel' : `Clock In${isCC ? ' — Color Change' : ''}`}
+              </button>
+              <button
+                onClick={() => setShowManual(true)}
+                style={{ width: '100%', background: 'transparent', color: B.textTer, border: `1px solid ${B.border}`, borderRadius: 14, padding: 13, fontSize: 14, cursor: 'pointer' }}
+              >
+                + Manual entry
+              </button>
+            </>
+          )}
 
           {activeJobs.filter(j => j.installer_id !== selectedInstallerId).length > 0 && (
             <div style={{ marginTop: 24 }}>

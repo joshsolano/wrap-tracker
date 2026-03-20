@@ -11,7 +11,7 @@ const PAGE_SIZE = 50
 
 export default function LogTab() {
   const { logs, installers, deleteLog } = useAppData()
-  const { isAdmin } = useAuth()
+  const { isAdmin, isGuest } = useAuth()
   const [filter, setFilter] = useState('All')
   const [page, setPage] = useState(0)
   const [warn, setWarn] = useState<WarnConfig | null>(null)
@@ -86,23 +86,25 @@ export default function LogTab() {
             </button>
           ))}
         </div>
-        <button
-          onClick={() => setShowManual(true)}
-          style={{
-            marginLeft: 8,
-            background: B.surface2,
-            color: B.textSec,
-            border: `1px solid ${B.border}`,
-            borderRadius: 10,
-            padding: '7px 12px',
-            fontSize: 12,
-            fontWeight: 600,
-            flexShrink: 0,
-            cursor: 'pointer',
-          }}
-        >
-          + Manual
-        </button>
+        {!isGuest && (
+          <button
+            onClick={() => setShowManual(true)}
+            style={{
+              marginLeft: 8,
+              background: B.surface2,
+              color: B.textSec,
+              border: `1px solid ${B.border}`,
+              borderRadius: 10,
+              padding: '7px 12px',
+              fontSize: 12,
+              fontWeight: 600,
+              flexShrink: 0,
+              cursor: 'pointer',
+            }}
+          >
+            + Manual
+          </button>
+        )}
       </div>
 
       <div

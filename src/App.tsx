@@ -18,7 +18,7 @@ const TABS = ['Clock In', 'Dashboard', 'Log', 'Projects', 'Leaderboard', 'Profil
 type Tab = typeof TABS[number]
 
 function AppShell() {
-  const { signOut, installer: me, isAdmin } = useAuth()
+  const { signOut, installer: me, isAdmin, isGuest } = useAuth()
   const { installers, activeJobs } = useAppData()
   const [tab, setTab] = useState<Tab>('Clock In')
   const [tabFade, setTabFade] = useState(true)
@@ -151,7 +151,19 @@ function AppShell() {
             </div>
           </div>
 
-          {me && (
+          {isGuest ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: B.textTer, background: B.surface, border: `1px solid ${B.border}`, borderRadius: 8, padding: '4px 10px', letterSpacing: '0.04em' }}>
+                Viewing as Guest
+              </div>
+              <button
+                onClick={signOut}
+                style={{ fontSize: 11, color: B.yellow, background: 'none', border: `1px solid ${B.yellow}66`, borderRadius: 8, padding: '4px 8px', cursor: 'pointer', fontWeight: 600, flexShrink: 0 }}
+              >
+                Sign in
+              </button>
+            </div>
+          ) : me ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
               <div style={{ width: 28, height: 28, borderRadius: '50%', background: me.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: B.bg, flexShrink: 0 }}>
                 {me.name.charAt(0)}
@@ -169,7 +181,7 @@ function AppShell() {
                 Sign out
               </button>
             </div>
-          )}
+          ) : null}
         </div>
 
         <div style={{ padding: '14px 20px 0' }}>
@@ -207,7 +219,7 @@ function AppShell() {
 }
 
 function AppGate() {
-  const { installer, loading } = useAuth()
+  const { installer, isGuest, loading } = useAuth()
 
   if (loading) {
     return (
@@ -227,7 +239,7 @@ function AppGate() {
     )
   }
 
-  if (!installer) {
+  if (!installer && !isGuest) {
     return <LoginScreen />
   }
 

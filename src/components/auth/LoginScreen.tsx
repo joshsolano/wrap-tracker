@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext'
 import { B } from '../../lib/utils'
 
 export default function LoginScreen() {
-  const { signIn } = useAuth()
+  const { signIn, enterGuestMode } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -50,6 +50,23 @@ export default function LoginScreen() {
             {loading ? 'Signing in…' : 'Sign In'}
           </button>
         </form>
+
+        <div style={{ display:'flex',alignItems:'center',gap:10,margin:'20px 0' }}>
+          <div style={{ flex:1,height:1,background:B.border }} />
+          <span style={{ fontSize:12,color:B.textTer }}>or</span>
+          <div style={{ flex:1,height:1,background:B.border }} />
+        </div>
+
+        <button
+          type="button"
+          onClick={enterGuestMode}
+          style={{ width:'100%',background:'transparent',color:B.textSec,border:`1px solid ${B.border}`,borderRadius:14,padding:16,fontSize:15,fontWeight:600,cursor:'pointer' }}
+        >
+          Continue as Guest
+        </button>
+        <div style={{ fontSize:12,color:B.textTer,textAlign:'center',marginTop:10 }}>
+          View-only · No account required
+        </div>
       </div>
     </div>
   )

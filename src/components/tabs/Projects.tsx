@@ -8,7 +8,7 @@ import type { WarnConfig, Project, Panel } from '../../lib/types'
 
 export default function Projects() {
   const { projects, logs, activeJobs, installers, updateProject, updateProjectType, updateDueDate, archiveProject, clockIn } = useAppData()
-  const { isAdmin, installer: me } = useAuth()
+  const { isAdmin, isGuest, installer: me } = useAuth()
   const [expanded, setExpanded] = useState<string | null>(null)
   const [editingDue, setEditingDue] = useState<string | null>(null)
   const [editingDueVal, setEditingDueVal] = useState('')
