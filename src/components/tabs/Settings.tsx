@@ -176,7 +176,7 @@ export default function Settings({ onSignOut }: Props) {
                     {inst.name.charAt(0)}
                   </div>
                   {colorPickerId===inst.id && (
-                    <div style={{ position:'absolute',top:38,left:0,zIndex:100,display:'flex',gap:7,padding:'10px 12px',background:B.surface,border:`1px solid ${B.border}`,borderRadius:14,boxShadow:'0 8px 24px rgba(0,0,0,0.5)',alignItems:'center',whiteSpace:'nowrap' }}>
+                    <div style={{ position:'absolute',top:38,left:0,zIndex:100,display:'flex',flexWrap:'wrap',gap:7,padding:'10px 12px',background:B.surface,border:`1px solid ${B.border}`,borderRadius:14,boxShadow:'0 8px 24px rgba(0,0,0,0.5)',alignItems:'center',maxWidth:220 }}>
                       {SWATCH_COLORS.map(clr => (
                         <button key={clr} onClick={e => { e.stopPropagation(); saveColor(inst.id, clr) }}
                           style={{ width:inst.color===clr?26:20,height:inst.color===clr?26:20,borderRadius:'50%',background:clr,border:inst.color===clr?'2.5px solid #fff':'2px solid transparent',cursor:'pointer',flexShrink:0,transition:'all 0.12s',boxShadow:inst.color===clr?`0 0 0 2px ${clr}`:'none' }} />

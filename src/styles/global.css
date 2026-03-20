@@ -4,6 +4,11 @@
   padding: 0;
 }
 
+html, body, #root {
+  background: #000000;
+  min-height: 100dvh;
+}
+
 input, select, textarea {
   -webkit-appearance: none;
   background: #2C2C2E;

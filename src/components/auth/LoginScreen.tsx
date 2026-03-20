@@ -19,7 +19,7 @@ export default function LoginScreen() {
   }
 
   return (
-    <div style={{ minHeight:'100vh',background:B.bg,display:'flex',alignItems:'center',justifyContent:'center',padding:20 }}>
+    <div style={{ minHeight:'100dvh',background:B.bg,display:'flex',alignItems:'center',justifyContent:'center',padding:20 }}>
       <div style={{ width:'100%',maxWidth:380 }}>
         <div style={{ fontSize:28,fontWeight:800,marginBottom:4,letterSpacing:'-0.03em' }}>
           <span style={{ color:B.yellow }}>WRAP</span><span style={{ color:B.text }}> GFX</span>

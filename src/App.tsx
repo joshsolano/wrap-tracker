@@ -52,7 +52,7 @@ function AppShell() {
     <div
       style={{
         background: B.bg,
-        minHeight: '100vh',
+        minHeight: '100dvh',
         fontFamily: "-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif",
         color: B.text,
         fontSize: 15,
@@ -172,15 +172,15 @@ function AppShell() {
           )}
         </div>
 
-        <div style={{ padding: '14px 20px 0' }}>
-          <div style={{ display: 'flex', gap: 3, background: B.surface, borderRadius: 14, padding: 4 }}>
+        <div style={{ padding: '14px 20px 0', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          <div style={{ display: 'flex', gap: 3, background: B.surface, borderRadius: 14, padding: 4, minWidth: 'max-content' }}>
             {TABS.map(t => (
               <button
                 key={t}
                 onClick={() => switchTab(t)}
                 style={{
-                  flex: 1,
-                  padding: '9px 4px',
+                  flex: 'none',
+                  padding: '9px 10px',
                   border: 'none',
                   borderRadius: 10,
                   background: tab === t ? B.yellow : 'transparent',
