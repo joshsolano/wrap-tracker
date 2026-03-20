@@ -3,7 +3,7 @@ import { useAppData } from '../../context/AppDataContext'
 import { useAuth } from '../../context/AuthContext'
 import { WarnModal } from '../ui/WarnModal'
 import { Toast } from '../ui/Toast'
-import { B, CC, fmtDate, fmtDue, fmtTime, daysUntil } from '../../lib/utils'
+import { B, CC, calcSqft, fmtDate, fmtDue, fmtTime, daysUntil } from '../../lib/utils'
 import type { WarnConfig, Project } from '../../lib/types'
 
 export default function Projects() {
@@ -52,7 +52,13 @@ export default function Projects() {
         statusColor = diff <= 0 ? B.green : B.red
       }
       const completionTs = isComplete && lastTs ? lastTs : null
-      return { p, pnls, total, doneCount, donePanelIds, inProgressPanelIds, remaining, workedBy, lastTs, daysSince, due, daysLeft, pct, isComplete, statusColor, statusLabel, onTimeBadge, completionTs, ajForProj }
+      let panelSqftSum = 0, panelSqftHasAny = false
+      for (const pnl of pnls) {
+        const s = pnl.height_in && pnl.width_in ? calcSqft(pnl.height_in, pnl.width_in) : null
+        if (s != null) { panelSqftSum += s; panelSqftHasAny = true }
+      }
+      const totalPanelSqft = panelSqftHasAny ? panelSqftSum : null
+      return { p, pnls, total, doneCount, donePanelIds, inProgressPanelIds, remaining, workedBy, lastTs, daysSince, due, daysLeft, pct, isComplete, statusColor, statusLabel, onTimeBadge, completionTs, ajForProj, totalPanelSqft }
     }).sort((a, b) => {
       if (a.isComplete && !b.isComplete) return 1
       if (!a.isComplete && b.isComplete) return -1
@@ -121,7 +127,7 @@ export default function Projects() {
       </div>
 
       <div style={{ display:'flex',flexDirection:'column',gap:10 }}>
-        {visible.map(({ p, pnls, doneCount, donePanelIds, inProgressPanelIds, remaining, workedBy, daysLeft, pct, isComplete, statusColor, statusLabel, onTimeBadge, completionTs, ajForProj }) => {
+        {visible.map(({ p, pnls, doneCount, donePanelIds, inProgressPanelIds, remaining, workedBy, daysLeft, pct, isComplete, statusColor, statusLabel, onTimeBadge, completionTs, ajForProj, totalPanelSqft }) => {
           const isExp = expanded === p.id
           const pc = isComplete ? B.green : statusColor
           const isCC = p.project_type === 'colorchange'
@@ -151,6 +157,7 @@ export default function Projects() {
                     </div>
                     <div style={{ display:'flex',alignItems:'center',gap:12,flexWrap:'wrap' }}>
                       <span style={{ fontSize:12,color:B.textSec,fontWeight:600 }}><span style={{ color:B.text }}>{doneCount}</span>/{pnls.length} panels{ajForProj.length > 0 && <span style={{ color:B.orange }}> + {ajForProj.length} active</span>}</span>
+                      {totalPanelSqft != null && <span style={{ fontSize:12,color:B.textTer }}>{totalPanelSqft.toFixed(1)} sqft total</span>}
                     </div>
                   </div>
                   <div style={{ flexShrink:0,textAlign:'right' }}>

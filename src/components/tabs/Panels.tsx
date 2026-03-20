@@ -262,6 +262,12 @@ export default function Panels() {
     )
     const donePnls = pnls.filter(pnl => donePanelIds.has(pnl.id))
     const pct = pnls.length > 0 ? donePnls.length / pnls.length : 0
+    let panelSqftSum = 0, panelSqftHasAny = false
+    for (const pnl of pnls) {
+      const s = pnl.height_in && pnl.width_in ? calcSqft(pnl.height_in, pnl.width_in) : null
+      if (s != null) { panelSqftSum += s; panelSqftHasAny = true }
+    }
+    const totalPanelSqft = panelSqftHasAny ? panelSqftSum : null
     const due = proj.due_date
     const daysLeft = daysUntil(due)
     const dueColor =
@@ -336,7 +342,7 @@ export default function Panels() {
               />
             </div>
             <span style={{ fontSize: 11, color: B.textTer, flexShrink: 0, fontWeight: 600 }}>
-              {donePnls.length}/{pnls.length} panels
+              {donePnls.length}/{pnls.length} panels{totalPanelSqft != null ? ` · ${totalPanelSqft.toFixed(1)} sqft total` : ''}
             </span>
           </div>
         </button>
