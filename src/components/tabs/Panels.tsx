@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useAppData } from '../../context/AppDataContext'
 import { useAuth } from '../../context/AuthContext'
+import { Redacted } from '../ui/Redacted'
 import { WarnModal } from '../ui/WarnModal'
 import { Toast } from '../ui/Toast'
 import { GroupHeader } from '../ui/GroupHeader'
@@ -313,7 +314,7 @@ export default function Panels() {
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <div style={{ fontSize: 15, fontWeight: 700 }}>{proj.name}</div>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>{isGuest ? <Redacted>{proj.name}</Redacted> : proj.name}</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <div
                 style={{

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAppData } from '../../context/AppDataContext'
 import { useAuth } from '../../context/AuthContext'
+import { Redacted } from '../ui/Redacted'
 import { WarnModal } from '../ui/WarnModal'
 import { Toast } from '../ui/Toast'
 import { GroupHeader } from '../ui/GroupHeader'
@@ -177,7 +178,7 @@ export default function ClockIn() {
                 }}
                 style={{ padding: '12px 8px', borderRadius: 12, border: `1.5px solid ${sel ? i.color : isActive ? B.orange : B.border}`, background: sel ? i.color + '18' : isActive ? B.orange + '0D' : 'transparent', color: sel ? i.color : isActive ? B.orange : B.textSec, fontWeight: sel ? 700 : 400, fontSize: 15, cursor: 'pointer', position: 'relative' }}
               >
-                {i.name.split(' ')[0]}
+                {isGuest ? <Redacted>{i.name.split(' ')[0]}</Redacted> : i.name.split(' ')[0]}
                 {isActive && (
                   <span style={{ position: 'absolute', top: -3, right: -3, width: 8, height: 8, borderRadius: '50%', background: B.orange, border: `1.5px solid ${B.bg}` }} />
                 )}
@@ -199,7 +200,7 @@ export default function ClockIn() {
                   )}
                 </div>
                 <div style={{ fontSize: 22, fontWeight: 800 }}>{activeJob.panel?.name ?? '—'}</div>
-                <div style={{ fontSize: 14, color: B.textSec, marginTop: 3 }}>{activeJob.project?.name ?? '—'}</div>
+                <div style={{ fontSize: 14, color: B.textSec, marginTop: 3 }}>{isGuest ? <Redacted>{activeJob.project?.name ?? '—'}</Redacted> : (activeJob.project?.name ?? '—')}</div>
               </div>
               <div style={{ width: 40, height: 40, borderRadius: '50%', background: activeJob.installer?.color ?? B.surface3, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 800, color: B.bg }}>
                 {(activeJob.installer?.name ?? '?').charAt(0)}
@@ -265,7 +266,7 @@ export default function ClockIn() {
                           {r.is_color_change && <span style={{ fontSize: 10, fontWeight: 700, color: CC, background: CC + '22', padding: '2px 6px', borderRadius: 8 }}>CC</span>}
                         </div>
                         <div style={{ fontSize: 12, color: B.textTer, marginTop: 2 }}>
-                          {r.project_name} · {fmtClock(r.start_ts)} → {fmtClock(r.finish_ts)}
+                          {isGuest ? <Redacted>{r.project_name ?? ''}</Redacted> : r.project_name} · {fmtClock(r.start_ts)} → {fmtClock(r.finish_ts)}
                         </div>
                       </div>
                       <div style={{ textAlign: 'right' }}>
@@ -285,7 +286,7 @@ export default function ClockIn() {
             {selectedProject ? (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 16px', borderRadius: 12, background: isCC ? CC + '14' : B.yellow + '14', border: `1.5px solid ${accent}` }}>
                 <div>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: accent }}>{selectedProject.name}</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: accent }}>{isGuest ? <Redacted>{selectedProject.name}</Redacted> : selectedProject.name}</div>
                   {isCC && <div style={{ fontSize: 11, color: CC, marginTop: 2 }}>Color Change</div>}
                 </div>
                 <button
@@ -321,7 +322,7 @@ export default function ClockIn() {
                           }}
                           style={{ padding: '12px 16px', borderRadius: 12, border: 'none', background: B.surface2, color: B.text, fontSize: 14, textAlign: 'left', cursor: 'pointer' }}
                         >
-                          {p.name}
+                          {isGuest ? <Redacted>{p.name}</Redacted> : p.name}
                         </button>
                       ))}
                     </>
@@ -339,7 +340,7 @@ export default function ClockIn() {
                           }}
                           style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderRadius: 12, border: 'none', background: B.surface2, color: B.text, fontSize: 14, textAlign: 'left', cursor: 'pointer', width: '100%' }}
                         >
-                          <span>{p.name}</span>
+                          <span>{isGuest ? <Redacted>{p.name}</Redacted> : p.name}</span>
                           <span style={{ fontSize: 10, fontWeight: 700, color: CC, background: CC + '22', padding: '2px 7px', borderRadius: 8 }}>CC</span>
                         </button>
                       ))}
@@ -375,7 +376,7 @@ export default function ClockIn() {
                           {pnl.name}
                           {activeOnPanel && (
                             <span style={{ fontSize: 10, fontWeight: 700, color: B.orange, background: B.orange + '22', padding: '2px 7px', borderRadius: 8 }}>
-                              IN PROGRESS{ipInst ? ` — ${ipInst.name.split(' ')[0]}` : ''}
+                              IN PROGRESS{ipInst ? <> — {isGuest ? <Redacted>{ipInst.name.split(' ')[0]}</Redacted> : ipInst.name.split(' ')[0]}</> : ''}
                             </span>
                           )}
                           {isDone && !activeOnPanel && (
@@ -430,7 +431,7 @@ export default function ClockIn() {
                     {isCC && <span style={{ fontSize: 10, fontWeight: 700, color: CC, background: CC + '22', padding: '2px 8px', borderRadius: 10 }}>COLOR CHANGE</span>}
                   </div>
                   <div style={{ fontSize: 13, color: B.textSec, marginTop: 2 }}>
-                    {selectedProject.name} · {jobType}
+                    {isGuest ? <Redacted>{selectedProject.name}</Redacted> : selectedProject.name} · {jobType}
                   </div>
                 </div>
                 <div style={{ fontSize: 12, color: B.textTer }}>
@@ -484,14 +485,14 @@ export default function ClockIn() {
                           </div>
                           <div>
                             <div style={{ fontWeight: 700, fontSize: 14 }}>{j.panel?.name}</div>
-                            <div style={{ fontSize: 12, color: B.textTer, marginTop: 1 }}>{j.project?.name}</div>
+                            <div style={{ fontSize: 12, color: B.textTer, marginTop: 1 }}>{isGuest ? <Redacted>{j.project?.name ?? ''}</Redacted> : j.project?.name}</div>
                           </div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontSize: 14, fontWeight: 800, color: B.orange, fontVariantNumeric: 'tabular-nums' }}>
                             {String(Math.floor(el / 3600)).padStart(2, '0')}:{String(Math.floor((el % 3600) / 60)).padStart(2, '0')}:{String(el % 60).padStart(2, '0')}
                           </div>
-                          <div style={{ fontSize: 11, color: B.textTer }}>{j.installer?.name.split(' ')[0]}</div>
+                          <div style={{ fontSize: 11, color: B.textTer }}>{isGuest ? <Redacted>{j.installer?.name.split(' ')[0] ?? ''}</Redacted> : j.installer?.name.split(' ')[0]}</div>
                         </div>
                       </div>
                     )
