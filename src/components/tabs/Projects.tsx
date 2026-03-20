@@ -4,11 +4,11 @@ import { useAuth } from '../../context/AuthContext'
 import { WarnModal } from '../ui/WarnModal'
 import { Toast } from '../ui/Toast'
 import { B, CC, calcSqft, fmtDate, fmtDue, fmtTime, daysUntil } from '../../lib/utils'
-import type { WarnConfig, Project } from '../../lib/types'
+import type { WarnConfig, Project, Panel } from '../../lib/types'
 
 export default function Projects() {
-  const { projects, logs, activeJobs, installers, updateProject, updateProjectType, updateDueDate, archiveProject } = useAppData()
-  const { isAdmin } = useAuth()
+  const { projects, logs, activeJobs, installers, updateProject, updateProjectType, updateDueDate, archiveProject, clockIn } = useAppData()
+  const { isAdmin, installer: me } = useAuth()
   const [expanded, setExpanded] = useState<string | null>(null)
   const [editingDue, setEditingDue] = useState<string | null>(null)
   const [editingDueVal, setEditingDueVal] = useState('')
@@ -17,6 +17,7 @@ export default function Projects() {
   const [showCompleted, setShowCompleted] = useState(false)
   const [warn, setWarn] = useState<WarnConfig | null>(null)
   const [toast, setToast] = useState('')
+  const [quickBusy, setQuickBusy] = useState(false)
 
   const projectsData = useMemo(() => {
     return projects.map(p => {
@@ -76,6 +77,37 @@ export default function Projects() {
   const atRiskCount = projectsData.filter(d => !d.isComplete && d.daysLeft != null && d.daysLeft > 2 && d.daysLeft <= 5).length
 
   function initials(name: string) { return name.split(' ').map(n => n[0]).join('').slice(0, 2) }
+
+  function handleQuickClockIn(panel: Panel, proj: Project) {
+    if (!me) {
+      setToast('No installer linked to this account — sign in as an installer first')
+      return
+    }
+    const snapMe = me
+    setWarn({
+      title: `Clock in ${snapMe.name.split(' ')[0]} on ${panel.name}?`,
+      body: `Project: ${proj.name} · Assigned to: ${snapMe.name}`,
+      ok: 'Clock In',
+      cancel: 'Cancel',
+      onOk: () => {
+        if (quickBusy) return
+        setQuickBusy(true)
+        clockIn({
+          installerId: snapMe.id,
+          projectId: proj.id,
+          panelId: panel.id,
+          jobType: 'Wrap',
+          isColorChange: proj.project_type === 'colorchange',
+        }).then(({ error }) => {
+          setQuickBusy(false)
+          if (error === 'panel_taken') setToast('Panel already in use')
+          else if (error === 'already_active') setToast(`${snapMe.name.split(' ')[0]} is already clocked in — clock out first`)
+          else if (error) setToast('Error: ' + error)
+          else setToast(`Clocked in — ${panel.name}`)
+        })
+      },
+    })
+  }
 
   function handleArchive(proj: Project) {
     const hasActive = activeJobs.some(j => j.project_id === proj.id)
@@ -223,6 +255,15 @@ export default function Projects() {
                             {isIP && <div style={{ fontSize:11,color:B.orange,marginTop:1 }}>In progress{ipInst ? ' — ' + ipInst.name.split(' ')[0] : ''}</div>}
                           </div>
                           {panel.height_in && panel.width_in && <div style={{ fontSize:11,color:B.textTer,flexShrink:0 }}>{panel.height_in}"×{panel.width_in}"</div>}
+                          {!isDone && !isIP && (
+                            <button
+                              onClick={() => handleQuickClockIn(panel, p)}
+                              disabled={quickBusy}
+                              style={{ fontSize:11,color:isCC?CC:B.yellow,background:'transparent',border:`1px solid ${isCC?CC+'66':B.yellow+'66'}`,borderRadius:8,padding:'4px 9px',cursor:quickBusy?'default':'pointer',fontWeight:700,flexShrink:0,whiteSpace:'nowrap',opacity:quickBusy?0.5:1 }}
+                            >
+                              Clock In
+                            </button>
+                          )}
                         </div>
                       )
                     })}
