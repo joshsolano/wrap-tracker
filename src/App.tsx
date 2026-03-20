@@ -18,7 +18,7 @@ const TABS = ['Clock In', 'Dashboard', 'Log', 'Projects', 'Leaderboard', 'Profil
 type Tab = typeof TABS[number]
 
 function AppShell() {
-  const { installer, signOut } = useAuth()
+  const { signOut } = useAuth()
   const { installers, activeJobs } = useAppData()
   const [tab, setTab] = useState<Tab>('Clock In')
   const [tabFade, setTabFade] = useState(true)

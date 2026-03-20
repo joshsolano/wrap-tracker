@@ -29,7 +29,6 @@ export default function Profiles() {
     return m
   }, [completeLogs, installers])
 
-  const totalComSqft = Array.from(boardSummary.values()).reduce((s,v) => s+v.sqft,0) || 1
   const topInstallerId = (() => {
     let topId = '', topSqft = -1
     boardSummary.forEach((v,id) => { if (v.sqft > topSqft) { topSqft = v.sqft; topId = id } })
