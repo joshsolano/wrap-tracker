@@ -172,15 +172,15 @@ function AppShell() {
           )}
         </div>
 
-        <div style={{ padding: '14px 20px 0', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-          <div style={{ display: 'flex', gap: 3, background: B.surface, borderRadius: 14, padding: 4, minWidth: 'max-content' }}>
+        <div style={{ padding: '14px 20px 0' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, background: B.surface, borderRadius: 14, padding: 4 }}>
             {TABS.map(t => (
               <button
                 key={t}
                 onClick={() => switchTab(t)}
                 style={{
-                  flex: 'none',
-                  padding: '9px 10px',
+                  flex: '1 1 22%',
+                  padding: '9px 4px',
                   border: 'none',
                   borderRadius: 10,
                   background: tab === t ? B.yellow : 'transparent',
