@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useAuth } from './context/AuthContext'
 import { useAppData, AppDataProvider } from './context/AppDataContext'
 import { ErrorBoundary } from './components/ui/ErrorBoundary'
@@ -23,6 +23,13 @@ function AppShell() {
   const [tab, setTab] = useState<Tab>('Clock In')
   const [tabFade, setTabFade] = useState(true)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640)
+
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 640)
+    window.addEventListener('resize', handler)
+    return () => window.removeEventListener('resize', handler)
+  }, [])
 
   function switchTab(t: Tab) {
     if (t === tab) return
@@ -185,13 +192,13 @@ function AppShell() {
         </div>
 
         <div style={{ padding: '14px 20px 0' }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, background: B.surface, borderRadius: 14, padding: 4 }}>
+          <div style={{ display: 'flex', flexWrap: isMobile ? 'wrap' : 'nowrap', gap: 3, background: B.surface, borderRadius: 14, padding: 4 }}>
             {TABS.map(t => (
               <button
                 key={t}
                 onClick={() => switchTab(t)}
                 style={{
-                  flex: '1 1 22%',
+                  flex: isMobile ? '1 1 22%' : 1,
                   padding: '9px 4px',
                   border: 'none',
                   borderRadius: 10,

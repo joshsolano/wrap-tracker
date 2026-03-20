@@ -2,6 +2,8 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import type { ActiveJob } from '../lib/types'
 
+const ACTIVE_JOBS_SELECT = '*, installer:installers(*), project:projects(*), panel:panels(*)'
+
 export function useActiveJobs() {
   const [activeJobs, setActiveJobs] = useState<ActiveJob[]>([])
   const [loading, setLoading] = useState(true)
@@ -12,7 +14,7 @@ export function useActiveJobs() {
   const fetch = useCallback(async () => {
     const { data, error: err } = await supabase
       .from('active_jobs')
-      .select('*, installer:installers(*), project:projects(*), panel:panels(*)')
+      .select(ACTIVE_JOBS_SELECT)
     if (err) { setError(err.message); return }
     setActiveJobs((data ?? []) as ActiveJob[])
     setError(null)
@@ -28,15 +30,13 @@ export function useActiveJobs() {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'active_jobs' },
         async (payload) => {
-          // Fetch the single new row with joins — cheaper than full table fetch
           const { data } = await supabase
             .from('active_jobs')
-            .select('*, installer:installers(*), project:projects(*), panel:panels(*)')
+            .select(ACTIVE_JOBS_SELECT)
             .eq('id', payload.new.id)
             .single()
           if (data) {
             setActiveJobs(prev => {
-              // Guard against duplicate if already present
               if (prev.find(j => j.id === data.id)) return prev
               return [...prev, data as ActiveJob]
             })
@@ -49,7 +49,7 @@ export function useActiveJobs() {
         async (payload) => {
           const { data } = await supabase
             .from('active_jobs')
-            .select('*, installer:installers(*), project:projects(*), panel:panels(*)')
+            .select(ACTIVE_JOBS_SELECT)
             .eq('id', payload.new.id)
             .single()
           if (data) {
@@ -65,7 +65,6 @@ export function useActiveJobs() {
         }
       )
       .subscribe((status) => {
-        // Only full-refetch on reconnect to recover from potential desync
         if (status === 'CHANNEL_ERROR' || status === 'CLOSED') {
           setTimeout(fetch, 2000)
         }
@@ -93,23 +92,36 @@ export function useActiveJobs() {
     })
 
     if (err) {
-      // Immediately refetch so UI reflects true DB state before returning error
+      // Refetch so UI reflects true DB state
       await fetch()
 
       if (err.code === '23505') {
-        // Determine which constraint fired by checking current DB state
         const { data: panelJob } = await supabase
           .from('active_jobs')
           .select('installer_id')
           .eq('panel_id', params.panelId)
           .maybeSingle()
 
-        if (panelJob) {
-          return { error: 'panel_taken' }
-        }
+        if (panelJob) return { error: 'panel_taken' }
         return { error: 'already_active' }
       }
       return { error: err.message }
+    }
+
+    // Immediately load the new row with joins so the UI transitions
+    // right away without waiting for the Realtime event (which can lag
+    // 1-3s on mobile and causes the double-tap problem).
+    const { data: newJob } = await supabase
+      .from('active_jobs')
+      .select(ACTIVE_JOBS_SELECT)
+      .eq('installer_id', params.installerId)
+      .maybeSingle()
+
+    if (newJob) {
+      setActiveJobs(prev => {
+        if (prev.find(j => j.id === (newJob as ActiveJob).id)) return prev
+        return [...prev, newJob as ActiveJob]
+      })
     }
 
     return { error: null }
@@ -117,8 +129,8 @@ export function useActiveJobs() {
 
   async function clockOut(installerId: string): Promise<{ celebrated: boolean; error: string | null }> {
     const job = activeJobs.find(j => j.installer_id === installerId)
+
     if (!job) {
-      // DB may still have the row even if local state lost it — try anyway
       const { error: err } = await supabase.rpc('clock_out', {
         p_installer_id: installerId,
         p_finish_ts:    new Date().toISOString(),
@@ -133,6 +145,10 @@ export function useActiveJobs() {
     })
     if (err) return { celebrated: false, error: err.message }
 
+    // Immediately remove from local state so the UI transitions without
+    // waiting for the Realtime DELETE event.
+    setActiveJobs(prev => prev.filter(j => j.installer_id !== installerId))
+
     const { data: didCelebrate } = await supabase.rpc('check_and_celebrate', {
       p_project_id: job.project_id,
     })
@@ -145,6 +161,10 @@ export function useActiveJobs() {
       .delete()
       .eq('installer_id', installerId)
     if (err) return { error: err.message }
+
+    // Immediately remove from local state — don't wait for Realtime DELETE.
+    setActiveJobs(prev => prev.filter(j => j.installer_id !== installerId))
+
     return { error: null }
   }
 

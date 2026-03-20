@@ -1,13 +1,23 @@
 import { useMemo, useState } from 'react'
 import { useAppData } from '../../context/AppDataContext'
+import { useAuth } from '../../context/AuthContext'
 import { MiniConfetti } from '../ui/Confetti'
 import { B, CC, isBirthday, fmtDate, fmtTime } from '../../lib/utils'
 import type { Log } from '../../lib/types'
+
+function Redacted({ children }: { children: string }) {
+  return (
+    <span style={{ background: '#3A3A3C', color: 'transparent', borderRadius: 3, userSelect: 'none' }}>
+      {children}
+    </span>
+  )
+}
 
 // ─── ProfilesList ─────────────────────────────────────────────────────────────
 
 function ProfilesList({ onSelect }: { onSelect: (id: string) => void }) {
   const { installers, logs } = useAppData()
+  const { isGuest } = useAuth()
 
   const completeLogs = useMemo(() =>
     logs.filter(r => r.status === 'Complete' && r.sqft && r.sqft > 0 && r.mins && r.mins > 0),
@@ -40,7 +50,10 @@ function ProfilesList({ onSelect }: { onSelect: (id: string) => void }) {
             <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: 14, width: '100%' }}>
               <div style={{ width: 46, height: 46, borderRadius: '50%', background: inst.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 800, color: B.bg, flexShrink: 0 }}>{inst.name.charAt(0)}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 16, fontWeight: 700 }}>{inst.name}{isBday ? ' 🎂' : ''}</div>
+                <div style={{ fontSize: 16, fontWeight: 700 }}>
+                  {isGuest ? <Redacted>{inst.name}</Redacted> : inst.name}
+                  {isBday ? ' 🎂' : ''}
+                </div>
                 <div style={{ display: 'flex', gap: 12, marginTop: 4 }}>
                   <span style={{ fontSize: 12, color: B.textTer }}>{stats.sqft.toFixed(1)} sqft</span>
                   <span style={{ fontSize: 12, color: B.textTer }}>{stats.panels} panels</span>
@@ -61,6 +74,7 @@ function ProfilesList({ onSelect }: { onSelect: (id: string) => void }) {
 
 function ProfileDetail({ installerId, onBack }: { installerId: string; onBack: () => void }) {
   const { installers, logs } = useAppData()
+  const { isGuest } = useAuth()
   const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({})
 
   const completeLogs = useMemo(() =>
@@ -150,7 +164,7 @@ function ProfileDetail({ installerId, onBack }: { installerId: string; onBack: (
     `Avg panel: ${myComLogs.length > 0 ? (comSqft / myComLogs.length).toFixed(1) : '--'} sqft`,
     `Avg time/panel: ${fmtTime(mpp)}`,
     `Projects: ${new Set(myComLogs.map(r => r.project_id).filter(Boolean)).size}`,
-    ...(longestPanel ? [`Longest: ${fmtTime(longestPanel.mins)} — ${longestPanel.panel_name} (${longestPanel.project_name})`] : []),
+    ...(longestPanel ? [`Longest: ${fmtTime(longestPanel.mins)} — ${longestPanel.panel_name}${isGuest ? '' : ` (${longestPanel.project_name})`}`] : []),
     ...(fastestPanel?.sqftHr ? [`Quickest: ${fastestPanel.sqftHr.toFixed(1)} sqft/hr — ${fastestPanel.panel_name}`] : []),
     ...(comAvg && comAvg > 20 ? [`Above 20 sqft/hr — above shop avg.`] : []),
     `Total hours: ${(comMins / 60).toFixed(1)}h`,
@@ -166,9 +180,14 @@ function ProfileDetail({ installerId, onBack }: { installerId: string; onBack: (
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
             <div style={{ width: 56, height: 56, borderRadius: '50%', background: installer.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, fontWeight: 800, color: B.bg, flexShrink: 0 }}>{installer.name.charAt(0)}</div>
             <div>
-              <div style={{ fontSize: 20, fontWeight: 800 }}>{installer.name}{isBday ? ' 🎂' : ''}</div>
+              <div style={{ fontSize: 20, fontWeight: 800 }}>
+                {isGuest ? <Redacted>{installer.name}</Redacted> : installer.name}
+                {isBday ? ' 🎂' : ''}
+              </div>
               <div style={{ fontSize: 12, color: B.textTer, marginTop: 2 }}>
-                {installer.birthday ? `Birthday: ${installer.birthday}` : 'No birthday set'}
+                {isGuest
+                  ? 'Birthday: ••••••••'
+                  : installer.birthday ? `Birthday: ${installer.birthday}` : 'No birthday set'}
                 {isTop && <span style={{ marginLeft: 8, color: B.yellow, fontWeight: 700 }}>· Top performer</span>}
               </div>
             </div>
@@ -227,7 +246,9 @@ function ProfileDetail({ installerId, onBack }: { installerId: string; onBack: (
                         <button onClick={() => setExpandedProjects(prev => ({ ...prev, [key]: !prev[key] }))}
                           style={{ width: '100%', background: 'none', border: 'none', padding: '14px 16px', textAlign: 'left', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: B.text }}>
                           <div>
-                            <div style={{ fontSize: 15, fontWeight: 700 }}>{p2.projName}</div>
+                            <div style={{ fontSize: 15, fontWeight: 700 }}>
+                              {isGuest ? <Redacted>{p2.projName}</Redacted> : p2.projName}
+                            </div>
                             <div style={{ fontSize: 12, color: B.textTer, marginTop: 2 }}>{p2.panels.length} panel{p2.panels.length !== 1 ? 's' : ''} · {p2.sqft.toFixed(1)} sqft · {fmtTime(p2.mins)}</div>
                           </div>
                           <span style={{ fontSize: 13, color: B.textTer, marginLeft: 8 }}>{isExp ? '▲' : '▼'}</span>

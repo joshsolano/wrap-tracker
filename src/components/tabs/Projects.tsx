@@ -6,6 +6,14 @@ import { Toast } from '../ui/Toast'
 import { B, CC, calcSqft, fmtDate, fmtDue, fmtTime, daysUntil } from '../../lib/utils'
 import type { WarnConfig, Project, Panel } from '../../lib/types'
 
+function Redacted({ children }: { children: string }) {
+  return (
+    <span style={{ background: '#3A3A3C', color: 'transparent', borderRadius: 3, userSelect: 'none' }}>
+      {children}
+    </span>
+  )
+}
+
 export default function Projects() {
   const { projects, logs, activeJobs, installers, updateProject, updateProjectType, updateDueDate, archiveProject, clockIn } = useAppData()
   const { isAdmin, isGuest, installer: me } = useAuth()
@@ -178,7 +186,7 @@ export default function Projects() {
                         </div>
                       ) : (
                         <div style={{ display:'flex',alignItems:'center',gap:6 }}>
-                          <div style={{ fontSize:15,fontWeight:700 }}>{p.name}</div>
+                          <div style={{ fontSize:15,fontWeight:700 }}>{isGuest ? <Redacted>{p.name}</Redacted> : p.name}</div>
                           {isAdmin && <button onClick={e => { e.stopPropagation(); setEditingName(p.id); setEditingNameVal(p.name) }} style={{ background:'none',border:'none',color:B.textTer,fontSize:12,cursor:'pointer',padding:0 }}>✎</button>}
                         </div>
                       )}
