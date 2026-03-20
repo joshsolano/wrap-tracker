@@ -22,6 +22,7 @@ export default function ClockIn() {
   const [, setTick] = useState(0)
   const [celebProject, setCelebProject] = useState<string | null>(null)
   const [showManual, setShowManual] = useState(false)
+  const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     const t = setInterval(() => setTick(n => n + 1), 500)
@@ -73,36 +74,47 @@ export default function ClockIn() {
   )
 
   async function handleClockIn() {
-    if (!selectedInstallerId || !selectedProjectId || !selectedPanelId) return
-    const { error } = await clockIn({
-      installerId: selectedInstallerId,
-      projectId: selectedProjectId,
-      panelId: selectedPanelId,
-      jobType,
-      isColorChange: isCC,
-    })
-    if (error === 'panel_taken') {
-      setWarn({ title: 'Panel already in use', body: 'Another installer is already working on this panel.', ok: 'OK' })
-      return
-    }
-    if (error === 'already_active') {
-      setWarn({ title: 'Already clocked in', body: 'You are already clocked in on another panel. Clock out first.', ok: 'OK' })
-      return
-    }
-    if (error) {
-      setWarn({ title: 'Cannot clock in', body: error, ok: 'OK' })
+    if (!selectedInstallerId || !selectedProjectId || !selectedPanelId || busy) return
+    setBusy(true)
+    try {
+      const { error } = await clockIn({
+        installerId: selectedInstallerId,
+        projectId: selectedProjectId,
+        panelId: selectedPanelId,
+        jobType,
+        isColorChange: isCC,
+      })
+      if (error === 'panel_taken') {
+        setWarn({ title: 'Panel already in use', body: 'Another installer is already working on this panel.', ok: 'OK' })
+        return
+      }
+      if (error === 'already_active') {
+        setWarn({ title: 'Already clocked in', body: 'You are already clocked in on another panel. Clock out first.', ok: 'OK' })
+        return
+      }
+      if (error) {
+        setWarn({ title: 'Cannot clock in', body: error, ok: 'OK' })
+      }
+    } finally {
+      setBusy(false)
     }
   }
 
   async function handleClockOut() {
-    if (!selectedInstallerId) return
-    const { celebrated, error } = await clockOut(selectedInstallerId)
-    if (error) {
-      setWarn({ title: 'Clock out failed', body: error, ok: 'OK' })
-      return
+    if (!selectedInstallerId || busy) return
+    const projectName = activeJob?.project?.name ?? null
+    setBusy(true)
+    try {
+      const { celebrated, error } = await clockOut(selectedInstallerId)
+      if (error) {
+        setWarn({ title: 'Clock out failed', body: error, ok: 'OK' })
+        return
+      }
+      setToast('Clocked out — entry saved')
+      if (celebrated) setCelebProject(projectName)
+    } finally {
+      setBusy(false)
     }
-    setToast('Clocked out — entry saved')
-    if (celebrated && activeJob) setCelebProject(activeJob.project?.name ?? null)
   }
 
   function handleDiscard() {
@@ -217,9 +229,10 @@ export default function ClockIn() {
 
             <button
               onClick={handleClockOut}
-              style={{ width: '100%', background: activeJob.is_color_change ? CC : B.yellow, color: activeJob.is_color_change ? B.text : B.bg, border: 'none', borderRadius: 14, padding: 18, fontSize: 17, fontWeight: 800, marginBottom: 10, cursor: 'pointer' }}
+              disabled={busy}
+              style={{ width: '100%', background: activeJob.is_color_change ? CC : B.yellow, color: activeJob.is_color_change ? B.text : B.bg, border: 'none', borderRadius: 14, padding: 18, fontSize: 17, fontWeight: 800, marginBottom: 10, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1 }}
             >
-              Clock Out
+              {busy ? 'Clocking out…' : 'Clock Out'}
             </button>
             <button
               onClick={handleDiscard}
@@ -427,10 +440,10 @@ export default function ClockIn() {
 
           <button
             onClick={handleClockIn}
-            disabled={!selectedInstallerId || !selectedProjectId || !selectedPanelId}
-            style={{ width: '100%', background: !selectedInstallerId || !selectedProjectId || !selectedPanelId ? B.surface2 : isCC ? CC : B.yellow, color: !selectedInstallerId || !selectedProjectId || !selectedPanelId ? B.textTer : isCC ? B.text : B.bg, border: 'none', borderRadius: 14, padding: 18, fontSize: 17, fontWeight: 800, marginBottom: 12, cursor: 'pointer' }}
+            disabled={!selectedInstallerId || !selectedProjectId || !selectedPanelId || busy}
+            style={{ width: '100%', background: !selectedInstallerId || !selectedProjectId || !selectedPanelId || busy ? B.surface2 : isCC ? CC : B.yellow, color: !selectedInstallerId || !selectedProjectId || !selectedPanelId || busy ? B.textTer : isCC ? B.text : B.bg, border: 'none', borderRadius: 14, padding: 18, fontSize: 17, fontWeight: 800, marginBottom: 12, cursor: busy ? 'default' : 'pointer' }}
           >
-            {!selectedInstallerId || !selectedProjectId || !selectedPanelId ? 'Select installer, project & panel' : `Clock In${isCC ? ' — Color Change' : ''}`}
+            {busy ? 'Clocking in…' : !selectedInstallerId || !selectedProjectId || !selectedPanelId ? 'Select installer, project & panel' : `Clock In${isCC ? ' — Color Change' : ''}`}
           </button>
 
           <button

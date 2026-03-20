@@ -35,6 +35,13 @@ export default function Profiles() {
     return topId
   })()
 
+  const myComLogs   = useMemo(() =>
+    installer ? completeLogs.filter(r => r.installer_id === installer.id && !r.is_color_change) : [],
+    [completeLogs, installer])
+  const myCCLogs    = useMemo(() =>
+    installer ? completeLogs.filter(r => r.installer_id === installer.id && r.is_color_change) : [],
+    [completeLogs, installer])
+
   if (!installer) {
     return (
       <div style={{ display:'flex',flexDirection:'column',gap:10 }}>
@@ -68,9 +75,6 @@ export default function Profiles() {
 
   const isBday = isBirthday(installer.birthday)
   const isTop = installer.id === topInstallerId
-
-  const myComLogs   = useMemo(() => completeLogs.filter(r => r.installer_id === installer.id && !r.is_color_change), [completeLogs, installer.id])
-  const myCCLogs    = useMemo(() => completeLogs.filter(r => r.installer_id === installer.id && r.is_color_change), [completeLogs, installer.id])
 
   const comSqft  = myComLogs.reduce((s,r)=>s+(r.sqft??0),0)
   const comMins  = myComLogs.reduce((s,r)=>s+(r.mins??0),0)
