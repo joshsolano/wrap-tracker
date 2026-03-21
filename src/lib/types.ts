@@ -110,6 +110,8 @@ export interface Bounty {
   end_date: string | null
   active: boolean
   winner_installer_id: string | null
+  paid: boolean
+  paid_at: string | null
   created_at: string
   conditions?: BountyCondition[]
 }

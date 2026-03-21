@@ -85,5 +85,16 @@ export function useBounties() {
     return { error: null }
   }
 
-  return { bounties, loading, error, createBounty, deleteBounty, toggleActive, awardWin }
+  async function markPaid(id: string) {
+    const now = new Date().toISOString()
+    const { error: err } = await supabase
+      .from('bounties')
+      .update({ paid: true, paid_at: now })
+      .eq('id', id)
+    if (err) return { error: err.message }
+    setBounties(prev => prev.map(b => b.id === id ? { ...b, paid: true, paid_at: now } : b))
+    return { error: null }
+  }
+
+  return { bounties, loading, error, createBounty, deleteBounty, toggleActive, awardWin, markPaid }
 }
