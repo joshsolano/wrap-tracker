@@ -63,6 +63,22 @@ const BOUNTY_CSS = `
     display: inline-block;
     animation: trophy-bounce 1.3s ease-in-out infinite;
   }
+  @keyframes modal-slide-up {
+    from { transform: translateY(40px); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
+  }
+  .bounty-modal-sheet {
+    animation: modal-slide-up 0.24s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+  }
+  .bounty-active-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  @media (max-width: 540px) {
+    .bounty-active-grid { grid-template-columns: 1fr; }
+  }
 `
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -79,7 +95,7 @@ function parseMins(t: string): number {
   return h * 60 + (m || 0)
 }
 
-function condLabel(type: ConditionType, value: number): string {
+function condLabel(type: ConditionType, value: number, opt?: { social_action_type?: string | null }): string {
   switch (type) {
     case 'sqft_total':       return `${value.toFixed(0)} commercial sqft`
     case 'sqft_cc':          return `${value.toFixed(0)} CC sqft`
@@ -92,6 +108,8 @@ function condLabel(type: ConditionType, value: number): string {
     case 'panels_single_day':return `${value} panels in one day`
     case 'best_sqft_hr_day': return `${value} sqft/hr in one day`
     case 'early_clock_in':   return `Clock in before ${minsToTime(value)}`
+    case 'first_clock_in':   return `First to clock in ${value === 1 ? 'once' : value + ' days'}`
+    case 'social_action':    return opt?.social_action_type === 'buy_coffee' ? 'Buy coffee for the crew ☕' : 'Buy lunch for the crew 🍔'
   }
 }
 
@@ -108,6 +126,8 @@ function condValueStr(type: ConditionType, value: number): string {
     case 'total_hours':       return value.toFixed(1) + 'h'
     case 'work_days':         return value + (value === 1 ? ' day' : ' days')
     case 'early_clock_in':    return value + (value === 1 ? ' early start' : ' early starts')
+    case 'first_clock_in':    return value + (value === 1 ? ' first-in day' : ' first-in days')
+    case 'social_action':     return 'committed'
   }
 }
 
@@ -125,6 +145,8 @@ function condTargetStr(cond: BountyCondition): string {
     case 'total_hours':       return cond.value.toFixed(1) + 'h'
     case 'work_days':         return cond.value + ' days'
     case 'early_clock_in':    return 'before ' + minsToTime(cond.value)
+    case 'first_clock_in':    return cond.value + (cond.value === 1 ? ' day' : ' days')
+    case 'social_action':     return cond.confirmed_by_installer_id ? '✓ committed' : 'pending'
   }
 }
 
@@ -142,6 +164,8 @@ function condRemainingStr(type: ConditionType, remaining: number): string {
     case 'total_hours':       return `${remaining.toFixed(1)}h to go`
     case 'work_days':         return `${Math.ceil(remaining)} day${Math.ceil(remaining) !== 1 ? 's' : ''} to go`
     case 'early_clock_in':    return 'clock in early once'
+    case 'first_clock_in':    return `be first to clock in ${Math.ceil(remaining)} more day${Math.ceil(remaining) !== 1 ? 's' : ''}`
+    case 'social_action':     return 'claim this commitment'
   }
 }
 
@@ -220,6 +244,8 @@ function genNextMoves(bounty: Bounty, board: InstProg[]): string[] {
             moves.push(`${n}: push avg to ${cond.value.toFixed(1)} sqft/hr to win`); break
           case 'early_clock_in':
             moves.push(`${n}: clock in before ${minsToTime(cond.value)} to win`); break
+          case 'social_action':
+            moves.push(`${n}: claim the social commitment to win`); break
         }
       }
     }
@@ -251,11 +277,100 @@ function genNextMoves(bounty: Bounty, board: InstProg[]): string[] {
           moves.push(`${n}: clock in early before ${ln} to catch up`); break
         case 'total_hours':
           moves.push(`${n}: ${(gap).toFixed(1)}h more than ${ln} to lead`); break
+        case 'social_action': case 'first_clock_in':
+          break
       }
     }
   }
 
   return moves.slice(0, 2)
+}
+
+function genMyNextMove(meId: string, bounty: Bounty, board: InstProg[]): string | null {
+  const conditions = bounty.conditions ?? []
+  if (!conditions.length || !board.length) return null
+  const me = board.find(ip => ip.installer.id === meId)
+  if (!me || me.allDone) return null
+  const leader = board[0]
+  const isLeading = me.installer.id === leader.installer.id
+
+  // Find bottleneck condition for me
+  const bi = conditions.length > 1
+    ? me.conds.reduce((mi, c, i, arr) => c.pct < arr[mi].pct ? i : mi, 0)
+    : 0
+  const cond = conditions[bi]
+  const prog = me.conds[bi]
+  if (!cond || !prog || prog.done) return null
+
+  const type   = cond.condition_type as ConditionType
+  const target = type === 'early_clock_in' ? 1 : cond.value
+  const rem    = target - prog.value
+
+  if (isLeading) {
+    if (rem <= 0) return null
+    switch (type) {
+      case 'sqft_total': case 'sqft_cc':
+        return `${rem.toFixed(1)} sqft closes it out`
+      case 'panels': case 'panels_cc':
+        return `${Math.ceil(rem)} more panel${Math.ceil(rem) !== 1 ? 's' : ''} to win`
+      case 'sqft_single_day':
+        return `Hit ${cond.value.toFixed(0)} sqft in one day to win`
+      case 'panels_single_day':
+        return `${Math.ceil(rem)} panels in one day seals it`
+      case 'work_days':
+        return `${Math.ceil(rem)} more day${Math.ceil(rem) !== 1 ? 's' : ''} and you win`
+      case 'total_hours':
+        return `${rem.toFixed(1)}h more on clock to finish`
+      case 'best_sqft_hr_day': case 'sqft_per_hr':
+        return `Average ${cond.value.toFixed(1)} sqft/hr in one day to win`
+      case 'early_clock_in':
+        return `Clock in before ${minsToTime(cond.value)} to win`
+      case 'first_clock_in':
+        return `Be first in ${Math.ceil(rem)} more day${Math.ceil(rem) !== 1 ? 's' : ''} to win`
+      case 'social_action':
+        return 'Claim the social commitment in the bounty details to win'
+    }
+  } else {
+    const leaderVal = leader?.conds[bi]?.value ?? 0
+    const gap = leaderVal - prog.value
+    const ln = leader?.installer.name.split(' ')[0] ?? 'leader'
+    if (gap > 0) {
+      switch (type) {
+        case 'sqft_total': case 'sqft_cc':
+          return `You need ${(gap + 1).toFixed(0)} sqft to pass ${ln}`
+        case 'panels': case 'panels_cc':
+          return `You need ${Math.ceil(gap) + 1} more panel${Math.ceil(gap) + 1 !== 1 ? 's' : ''} to take the lead`
+        case 'sqft_single_day':
+          return `One day over ${(leaderVal + 1).toFixed(0)} sqft flips this`
+        case 'panels_single_day':
+          return `You need ${Math.ceil(gap) + 1} panels in one day to take first`
+        case 'work_days':
+          return `Work ${Math.ceil(gap)} more day${Math.ceil(gap) !== 1 ? 's' : ''} to tie ${ln}`
+        case 'total_hours':
+          return `Clock ${gap.toFixed(1)}h more than ${ln} to take the lead`
+        case 'best_sqft_hr_day': case 'sqft_per_hr':
+          return `Beat ${ln}'s ${leaderVal.toFixed(1)} sqft/hr to take the lead`
+        case 'early_clock_in':
+          return `Clock in before ${minsToTime(cond.value)} once to catch up`
+        case 'first_clock_in':
+          return `You need ${Math.ceil(gap) + 1} more first-in days to pass ${ln}`
+        case 'social_action':
+          return `Claim the social commitment before ${ln} does`
+      }
+    } else if (rem > 0) {
+      switch (type) {
+        case 'sqft_total': case 'sqft_cc':
+          return `You're tied — ${rem.toFixed(0)} sqft to win`
+        case 'panels': case 'panels_cc':
+          return `Tied — ${Math.ceil(rem)} more panel${Math.ceil(rem) !== 1 ? 's' : ''} to win`
+        default: {
+          const s = condRemainingStr(type, rem)
+          return s || null
+        }
+      }
+    }
+  }
+  return null
 }
 
 // ── progress calculation ──────────────────────────────────────────────────────
@@ -379,6 +494,34 @@ function calcInstProg(
         target = 1
         break
       }
+
+      case 'first_clock_in': {
+        // All installer logs in range (not filtered to this installer)
+        const allInRange = logs.filter(r =>
+          r.status === 'Complete' && r.start_ts &&
+          new Date(r.start_ts) >= start && new Date(r.start_ts) <= end
+        )
+        // For each calendar day, find the earliest clock-in across all installers
+        const earliestByDay = new Map<string, { installerId: string | null; ts: number }>()
+        for (const r of allInRange) {
+          const key = new Date(r.start_ts).toDateString()
+          const ts  = new Date(r.start_ts).getTime()
+          const cur = earliestByDay.get(key)
+          if (!cur || ts < cur.ts) earliestByDay.set(key, { installerId: r.installer_id, ts })
+        }
+        // Count days where this installer was first
+        for (const entry of earliestByDay.values()) {
+          if (entry.installerId === installerId) value++
+        }
+        break
+      }
+
+      case 'social_action': {
+        // Done if this installer claimed the commitment
+        value  = cond.confirmed_by_installer_id === installerId ? 1 : 0
+        target = 1
+        break
+      }
     }
 
     const pct = target > 0 ? Math.min(1, value / target) : 0
@@ -447,7 +590,7 @@ function genFunFacts(bounty: Bounty, board: InstProg[], allLogs: Log[]): string[
     const t    = firstCond.condition_type as ConditionType
     if (gap > 0) {
       if (t === 'sqft_total' || t === 'sqft_cc' || t === 'sqft_single_day')
-        facts.push(`${name} leads by ${gap.toFixed(1)} sqft — one good job flips this`)
+        facts.push(`${name} is ${gap.toFixed(1)} sqft ahead — one good job flips this`)
       else if (t === 'panels' || t === 'panels_cc' || t === 'panels_single_day')
         facts.push(`Only ${Math.round(gap)} panel${Math.round(gap) !== 1 ? 's' : ''} between 1st and 2nd`)
       else if (t === 'sqft_per_hr' || t === 'best_sqft_hr_day')
@@ -455,7 +598,7 @@ function genFunFacts(bounty: Bounty, board: InstProg[], allLogs: Log[]): string[
       else if (t === 'early_clock_in')
         facts.push(`${name} has ${Math.round(leaderCond0.value - secondCond0.value)} more early start${Math.round(leaderCond0.value - secondCond0.value) !== 1 ? 's' : ''}`)
     } else if (gap === 0 && leaderCond0.value > 0) {
-      facts.push(`Tied — whoever works tomorrow takes it`)
+      facts.push(`Dead heat — whoever shows up tomorrow takes it`)
     }
   }
 
@@ -481,12 +624,12 @@ function genFunFacts(bounty: Bounty, board: InstProg[], allLogs: Log[]): string[
 
   // ── wide open / leader vulnerable ──
   if (board.length >= 2 && leader.overallPct < 0.3) {
-    facts.push('No one owns this yet — it\'s up for grabs')
+    facts.push('No one owns this yet — wide open')
   } else if (firstCond && leaderCond0 && secondCond0 && leader.overallPct > 0.5) {
     const gap = leaderCond0.value - secondCond0.value
     const t   = firstCond.condition_type as ConditionType
     if ((t === 'sqft_total' || t === 'sqft_cc') && gap > 0 && gap < 80) {
-      facts.push(`Leader is vulnerable — gap is under ${Math.ceil(gap / 10) * 10} sqft`)
+      facts.push(`Leader is vulnerable — gap is ${gap.toFixed(0)} sqft`)
     }
   }
 
@@ -499,7 +642,7 @@ function genFunFacts(bounty: Bounty, board: InstProg[], allLogs: Log[]): string[
         const avgDay = shopLogs.reduce((s, r) => s + (r.sqft ?? 0), 0) /
           new Set(shopLogs.map(r => new Date(r.start_ts).toDateString())).size
         if (avgDay > 0 && avgDay / firstCond.value > 0.25) {
-          facts.push(`One strong day (${avgDay.toFixed(0)} sqft avg) could flip the standings`)
+          facts.push(`One strong day (avg ${avgDay.toFixed(0)} sqft) could flip this`)
         }
       }
     }
@@ -513,17 +656,17 @@ function genFunFacts(bounty: Bounty, board: InstProg[], allLogs: Log[]): string[
     const doneConds = leader.conds.filter(c => c.done).length
     const total     = conditions.length
     if (doneConds > 0 && doneConds < total - 1) {
-      facts.push(`${doneConds} of ${total} legs hit — keep the pressure on`)
+      facts.push(`${doneConds} of ${total} legs locked — final stretch`)
     } else if (doneConds === 0) {
-      facts.push(`Parlay wide open — momentum wins this one`)
+      facts.push(`Parlay still open — first mover has the advantage`)
     }
   }
 
   // ── urgency ──
   if (dLeft != null && dLeft <= 2 && dLeft >= 0 && leader.overallPct < 1) {
     facts.push(dLeft === 0
-      ? 'Last day — someone make a move'
-      : '48 hours left — someone\'s going to make a run'
+      ? 'Last day — someone step up'
+      : '48 hours left — clock is running'
     )
   }
 
@@ -543,6 +686,102 @@ function genFunFacts(bounty: Bounty, board: InstProg[], allLogs: Log[]): string[
 }
 
 // ── sub-components ────────────────────────────────────────────────────────────
+
+function SocialActionRow({
+  cond,
+  meInstaller,
+  installers,
+  isGuest,
+  onConfirm,
+}: {
+  cond: BountyCondition
+  meInstaller?: Installer | null
+  installers: Installer[]
+  isGuest: boolean
+  onConfirm: (condId: string, installerId: string) => Promise<{ error: string | null }>
+}) {
+  const [loading, setLoading] = useState(false)
+  const claimed = !!cond.confirmed_by_installer_id
+  const claimer = claimed ? installers.find(i => i.id === cond.confirmed_by_installer_id) : null
+  const iMyClaim = meInstaller && cond.confirmed_by_installer_id === meInstaller.id
+  const canClaim = !isGuest && !!meInstaller && !claimed
+
+  async function handleClaim() {
+    if (!meInstaller || loading || claimed) return
+    setLoading(true)
+    await onConfirm(cond.id, meInstaller.id)
+    setLoading(false)
+  }
+
+  const label = cond.social_action_type === 'buy_coffee' ? 'Buy coffee for the crew ☕' : 'Buy lunch for the crew 🍔'
+
+  return (
+    <div style={{
+      background: claimed ? B.green + '0A' : B.surface2,
+      border: `1px solid ${claimed ? B.green + '33' : B.border}`,
+      borderRadius: 10,
+      padding: '10px 14px',
+      marginBottom: 12,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+    }}>
+      <div style={{
+        width: 28, height: 28, borderRadius: 8,
+        background: claimed ? B.green + '22' : B.surface3,
+        border: `1px solid ${claimed ? B.green + '44' : B.border}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 14, flexShrink: 0,
+      }}>
+        {claimed ? '✓' : '🤝'}
+      </div>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: claimed ? B.green : B.text, marginBottom: 2 }}>
+          {label}
+        </div>
+        {claimed ? (
+          <div style={{ fontSize: 11, color: B.textTer, display: 'flex', alignItems: 'center', gap: 6 }}>
+            {claimer && (
+              <div style={{
+                width: 18, height: 18, borderRadius: '50%', background: claimer.color,
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 9, fontWeight: 800, color: B.bg, flexShrink: 0,
+              }}>
+                {claimer.name.charAt(0)}
+              </div>
+            )}
+            <span>{iMyClaim ? 'You committed' : `${claimer?.name.split(' ')[0] ?? 'Someone'} committed`}</span>
+            {cond.confirmed_at && <span>· {new Date(cond.confirmed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>}
+          </div>
+        ) : (
+          <div style={{ fontSize: 11, color: B.textTer }}>
+            {isGuest ? 'Sign in to claim' : 'First to commit gets credit for this leg'}
+          </div>
+        )}
+      </div>
+
+      {canClaim && (
+        <button
+          onClick={handleClaim}
+          disabled={loading}
+          style={{
+            fontSize: 11, fontWeight: 800, color: B.bg,
+            background: B.yellow, border: 'none', borderRadius: 8,
+            padding: '6px 12px', cursor: loading ? 'default' : 'pointer',
+            opacity: loading ? 0.6 : 1, flexShrink: 0,
+          }}
+        >
+          {loading ? '…' : "I'll do it"}
+        </button>
+      )}
+
+      {!canClaim && !claimed && !isGuest && (
+        <div style={{ fontSize: 10, color: B.textTer, fontStyle: 'italic', flexShrink: 0 }}>Available</div>
+      )}
+    </div>
+  )
+}
 
 const MEDALS     = ['#F5C400', '#B0B8C1', '#CD7F32']
 const MEDAL_GLOW = ['rgba(245,196,0,0.35)', 'rgba(176,184,193,0.25)', 'rgba(205,127,50,0.25)']
@@ -639,18 +878,21 @@ function MiniLeaderboard({
 
   const isCloseRace = top.length >= 2 &&
     top[0].overallPct > 0.15 &&
-    (top[0].overallPct - top[1].overallPct) < 0.15
+    (top[0].overallPct - top[1].overallPct) < 0.12
 
   return (
     <div>
       {isCloseRace && (
         <div style={{
           fontSize: 10, fontWeight: 800, color: B.orange,
-          letterSpacing: '0.1em', textTransform: 'uppercase',
-          marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6,
+          letterSpacing: '0.08em', textTransform: 'uppercase',
+          marginBottom: 8, padding: '5px 10px',
+          background: B.orange + '0E', border: `1px solid ${B.orange}28`,
+          borderRadius: 7,
+          display: 'flex', alignItems: 'center', gap: 6,
         }}>
-          <span style={{ width: 6, height: 6, borderRadius: '50%', background: B.orange, display: 'inline-block' }} />
-          {top[0].installer.name.split(' ')[0]} vs {top[1].installer.name.split(' ')[0]} — gap under 15%
+          <span className="bounty-urgency" style={{ width: 6, height: 6, borderRadius: '50%', background: B.orange, display: 'inline-block', flexShrink: 0 }} />
+          {top[0].installer.name.split(' ')[0]} vs {top[1].installer.name.split(' ')[0]} — neck and neck
         </div>
       )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -756,20 +998,27 @@ function MiniLeaderboard({
                   if (gap <= 0) return null
                   let label = ''
                   if (type === 'sqft_total' || type === 'sqft_cc' || type === 'sqft_single_day')
-                    label = `-${gap.toFixed(1)} sqft`
+                    label = `${gap.toFixed(0)} sqft back`
                   else if (type === 'panels' || type === 'panels_cc' || type === 'panels_single_day')
-                    label = `-${Math.round(gap)} panel${Math.round(gap)!==1?'s':''}`
+                    label = `${Math.round(gap)} panel${Math.round(gap)!==1?'s':''} back`
                   else if (type === 'total_hours')
-                    label = `-${gap.toFixed(1)}h`
+                    label = `${gap.toFixed(1)}h back`
                   else if (type === 'work_days')
-                    label = `-${Math.round(gap)} day${Math.round(gap)!==1?'s':''}`
+                    label = `${Math.round(gap)} day${Math.round(gap)!==1?'s':''} back`
                   else
-                    label = `-${((top[0].overallPct - ip.overallPct) * 100).toFixed(0)}%`
-                  return <div style={{ fontSize: 9, color: B.textTer, marginTop: 2 }}>{label}</div>
+                    label = `${((top[0].overallPct - ip.overallPct) * 100).toFixed(0)}% back`
+                  const isSecond = i === 1
+                  return (
+                    <div style={{
+                      fontSize: 10, fontWeight: isSecond && isCloseRace ? 700 : 500,
+                      color: isSecond && isCloseRace ? B.orange : B.textTer,
+                      marginTop: 2,
+                    }}>{label}</div>
+                  )
                 })()}
                 {isAdmin && onAward && !winnerId && (
                   <button
-                    onClick={() => onAward(ip)}
+                    onClick={e => { e.stopPropagation(); onAward(ip) }}
                     style={{
                       fontSize: 9, color: B.textTer, background: 'none',
                       border: `1px solid ${B.border}`, borderRadius: 5,
@@ -797,6 +1046,8 @@ function FeaturedBountyCard({
   onAward,
   onToggle,
   onDelete,
+  meInstaller,
+  onSelect,
 }: {
   bounty: Bounty
   board: InstProg[]
@@ -805,6 +1056,8 @@ function FeaturedBountyCard({
   onAward: (ip: InstProg) => void
   onToggle: () => void
   onDelete: () => void
+  meInstaller?: Installer | null
+  onSelect?: () => void
 }) {
   const conditions = bounty.conditions ?? []
   const leader     = board[0]
@@ -818,17 +1071,28 @@ function FeaturedBountyCard({
   const isHot      = !winner && isHotBounty(board)
   const nextMoves  = !winner ? genNextMoves(bounty, board) : []
 
+  const meProgress = meInstaller ? board.find(ip => ip.installer.id === meInstaller.id) : null
+  const myMove     = (!winner && meInstaller) ? genMyNextMove(meInstaller.id, bounty, board) : null
+  const iAmLeading = meProgress ? meProgress.installer.id === leader?.installer.id : false
+
+
   return (
-    <div style={{
-      background: 'linear-gradient(145deg, #1C1C1E 0%, #222220 100%)',
-      border: `1.5px solid ${isUrgent ? B.red + '55' : B.yellow + '33'}`,
-      borderRadius: 20,
-      padding: 22,
-      marginBottom: 20,
-      boxShadow: `0 0 48px rgba(245,196,0,0.06), 0 12px 40px rgba(0,0,0,0.55)`,
-      position: 'relative',
-      overflow: 'hidden',
-    }}>
+    <div
+      className={isHot ? 'bounty-glow-pulse' : ''}
+      onClick={onSelect}
+      style={{
+        '--glow-color': isHot ? `${B.orange}55` : `rgba(245,196,0,0.3)`,
+        background: 'linear-gradient(145deg, #1C1C1E 0%, #222220 100%)',
+        border: `1.5px solid ${isUrgent ? B.red + '55' : isHot ? B.orange + '44' : B.yellow + '33'}`,
+        borderRadius: 18,
+        padding: 15,
+        marginBottom: 16,
+        boxShadow: `0 0 48px rgba(245,196,0,0.06), 0 12px 40px rgba(0,0,0,0.55)`,
+        position: 'relative',
+        overflow: 'hidden',
+        cursor: onSelect ? 'pointer' : 'default',
+      } as React.CSSProperties}
+    >
       {/* Background glow */}
       <div style={{
         position: 'absolute', top: -40, right: -40,
@@ -872,8 +1136,8 @@ function FeaturedBountyCard({
             )}
             {isAdmin && !winner && (
               <div style={{ display: 'flex', gap: 5, marginLeft: 'auto' }}>
-                <button onClick={onToggle} style={{ fontSize: 10, color: B.textTer, background: 'none', border: `1px solid ${B.border}`, borderRadius: 6, padding: '2px 8px', cursor: 'pointer' }}>Pause</button>
-                <button onClick={onDelete} style={{ fontSize: 10, color: B.red, background: 'none', border: `1px solid ${B.red}44`, borderRadius: 6, padding: '2px 8px', cursor: 'pointer' }}>Delete</button>
+                <button onClick={e => { e.stopPropagation(); onToggle() }} style={{ fontSize: 10, color: B.textTer, background: 'none', border: `1px solid ${B.border}`, borderRadius: 6, padding: '2px 8px', cursor: 'pointer' }}>Pause</button>
+                <button onClick={e => { e.stopPropagation(); onDelete() }} style={{ fontSize: 10, color: B.red, background: 'none', border: `1px solid ${B.red}44`, borderRadius: 6, padding: '2px 8px', cursor: 'pointer' }}>Delete</button>
               </div>
             )}
           </div>
@@ -892,24 +1156,25 @@ function FeaturedBountyCard({
             <span style={{ fontSize: 10, fontWeight: 700, color: B.yellow, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Prize</span>
             <span style={{ fontSize: 15, fontWeight: 800, color: B.yellow }}>{bounty.reward}</span>
           </div>
-          <div style={{ fontSize: 9, color: B.textTer, marginTop: 6, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>
-            Winner takes all · No splits
-          </div>
+          {!winner && (
+            <div style={{ fontSize: 10, color: B.textTer, marginTop: 5 }}>Winner takes all · No splits</div>
+          )}
         </div>
 
         {/* Time left */}
-        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', flexShrink: 0 }}>
           <div
             className={isUrgent ? 'bounty-urgency' : ''}
             style={{
               fontSize: 12, fontWeight: 700, color: tColor,
               background: tColor + '18', border: `1px solid ${tColor}44`,
-              borderRadius: 8, padding: '4px 10px', marginBottom: 4,
+              borderRadius: 8, padding: '3px 8px', marginBottom: 3,
+              whiteSpace: 'nowrap',
             }}
           >
             {tLeft}
           </div>
-          <div style={{ fontSize: 10, color: B.textTer }}>
+          <div style={{ fontSize: 10, color: B.textTer, whiteSpace: 'nowrap' }}>
             {fmtDate(bounty.start_date)}{bounty.end_date ? ` – ${fmtDate(bounty.end_date)}` : ''}
           </div>
         </div>
@@ -933,36 +1198,6 @@ function FeaturedBountyCard({
         </div>
       )}
 
-      {/* Leader highlight (when no winner yet) */}
-      {!winner && leader && leader.overallPct > 0 && (
-        <div style={{
-          background: `${leader.installer.color}0E`,
-          border: `1px solid ${leader.installer.color}33`,
-          borderRadius: 12, padding: '10px 14px',
-          display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16,
-        }}>
-          <div
-            className={leader.overallPct >= 0.8 ? 'bounty-glow-pulse' : ''}
-            style={{
-              '--glow-color': `${leader.installer.color}55`,
-              width: 36, height: 36, borderRadius: '50%',
-              background: leader.installer.color,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 15, fontWeight: 800, color: B.bg,
-              boxShadow: `0 0 14px ${leader.installer.color}44`,
-            } as React.CSSProperties}
-          >
-            {leader.installer.name.charAt(0)}
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 10, color: B.textTer, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 2 }}>Leading</div>
-            <div style={{ fontSize: 15, fontWeight: 800 }}>{leader.installer.name.split(' ')[0]}</div>
-          </div>
-          <div style={{ fontSize: 26, fontWeight: 900, color: leader.installer.color, letterSpacing: '-0.02em' }}>
-            {(leader.overallPct * 100).toFixed(0)}%
-          </div>
-        </div>
-      )}
 
       {/* Conditions */}
       {conditions.length > 0 && (
@@ -1000,10 +1235,7 @@ function FeaturedBountyCard({
 
       {/* Leaderboard */}
       {board.length > 0 && (
-        <div style={{ marginBottom: facts.length > 0 ? 14 : 0 }}>
-          <div style={{ fontSize: 9, fontWeight: 700, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>
-            Standings
-          </div>
+        <div style={{ marginBottom: 14 }}>
           <MiniLeaderboard
             board={board}
             conditions={conditions}
@@ -1014,8 +1246,96 @@ function FeaturedBountyCard({
         </div>
       )}
 
-      {/* NEXT MOVE */}
-      {nextMoves.length > 0 && (
+      {/* YOU VS LEADER block */}
+      {meProgress && !winner && (() => {
+        const bi = conditions.length > 1
+          ? meProgress.conds.reduce((mi, c, i, arr) => c.pct < arr[mi].pct ? i : mi, 0)
+          : 0
+        const cond = conditions[bi]
+        if (!cond) return null
+        const type = cond.condition_type as ConditionType
+        const myVal = meProgress.conds[bi]?.value ?? 0
+        const leaderVal = leader?.conds[bi]?.value ?? 0
+
+        let myStr = '', leaderStr = '', gapStr = ''
+        if (type === 'sqft_total' || type === 'sqft_cc' || type === 'sqft_single_day') {
+          myStr = `${myVal.toFixed(0)} sqft`
+          leaderStr = `${leaderVal.toFixed(0)} sqft`
+          gapStr = `${(leaderVal - myVal).toFixed(0)} sqft`
+        } else if (type === 'panels' || type === 'panels_cc' || type === 'panels_single_day') {
+          myStr = `${myVal} panels`
+          leaderStr = `${leaderVal} panels`
+          gapStr = `${Math.round(leaderVal - myVal)} panels`
+        } else if (type === 'sqft_per_hr' || type === 'best_sqft_hr_day') {
+          myStr = `${myVal.toFixed(1)} sqft/hr`
+          leaderStr = `${leaderVal.toFixed(1)} sqft/hr`
+          gapStr = `${(leaderVal - myVal).toFixed(1)} sqft/hr`
+        } else if (type === 'total_hours') {
+          myStr = `${myVal.toFixed(1)}h`
+          leaderStr = `${leaderVal.toFixed(1)}h`
+          gapStr = `${(leaderVal - myVal).toFixed(1)}h`
+        } else if (type === 'work_days') {
+          myStr = `${myVal} days`
+          leaderStr = `${leaderVal} days`
+          gapStr = `${Math.round(leaderVal - myVal)} days`
+        } else {
+          return null
+        }
+
+        if (iAmLeading) {
+          return (
+            <div style={{
+              background: B.green + '0A', border: `1px solid ${B.green}33`,
+              borderRadius: 10, padding: '10px 14px', marginBottom: 12,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: B.green }}>You're in the lead</span>
+              <span style={{ fontSize: 12, color: B.textTer }}>{(meProgress.overallPct * 100).toFixed(0)}% complete</span>
+            </div>
+          )
+        }
+
+        return (
+          <div style={{
+            background: B.surface2, borderRadius: 10, padding: '10px 14px',
+            marginBottom: 12, display: 'flex', gap: 1,
+          }}>
+            <div style={{ flex: 1, textAlign: 'center' }}>
+              <div style={{ fontSize: 9, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4, fontWeight: 700 }}>You</div>
+              <div style={{ fontSize: 14, fontWeight: 800, color: B.text }}>{myStr}</div>
+            </div>
+            <div style={{ flex: 1, textAlign: 'center', borderLeft: `1px solid ${B.border}`, borderRight: `1px solid ${B.border}` }}>
+              <div style={{ fontSize: 9, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4, fontWeight: 700 }}>Leader</div>
+              <div style={{ fontSize: 14, fontWeight: 800, color: B.yellow }}>{leaderStr}</div>
+            </div>
+            <div style={{ flex: 1, textAlign: 'center' }}>
+              <div style={{ fontSize: 9, color: B.orange, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4, fontWeight: 700 }}>Gap</div>
+              <div style={{ fontSize: 14, fontWeight: 800, color: B.orange }}>{gapStr}</div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* MY NEXT MOVE — personal */}
+      {myMove && (
+        <div style={{
+          background: `${B.yellow}0A`, border: `1px solid ${B.yellow}33`,
+          borderRadius: 12, padding: '11px 14px', marginBottom: 12,
+          display: 'flex', gap: 10, alignItems: 'flex-start',
+        }}>
+          <span style={{ color: B.yellow, fontSize: 13, flexShrink: 0, marginTop: 1 }}>→</span>
+          <div>
+            <div style={{ fontSize: 9, fontWeight: 800, color: B.yellow, textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 4 }}>Your move</div>
+            <div style={{ fontSize: 13, color: B.text, fontWeight: 700, lineHeight: 1.4 }}>{myMove}</div>
+            {meProgress && iAmLeading && (
+              <div style={{ fontSize: 11, color: B.green, fontWeight: 600, marginTop: 4 }}>You're leading — don't let up</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* NEXT MOVE — generic, shown when not logged in */}
+      {!myMove && nextMoves.length > 0 && (
         <div style={{
           background: `${B.yellow}08`, border: `1px solid ${B.yellow}22`,
           borderRadius: 12, padding: '11px 14px',
@@ -1034,6 +1354,7 @@ function FeaturedBountyCard({
           </div>
         </div>
       )}
+
 
       {/* Fun facts */}
       {facts.length > 0 && !winner && (
@@ -1058,6 +1379,8 @@ function ActiveBountyCard({
   onAward,
   onToggle,
   onDelete,
+  onSelect,
+  compact,
 }: {
   bounty: Bounty
   board: InstProg[]
@@ -1066,6 +1389,8 @@ function ActiveBountyCard({
   onAward: (ip: InstProg) => void
   onToggle: () => void
   onDelete: () => void
+  onSelect?: () => void
+  compact?: boolean
 }) {
   const conditions = bounty.conditions ?? []
   const isParlay   = conditions.length > 1
@@ -1077,13 +1402,17 @@ function ActiveBountyCard({
   const doneConds  = leader?.conds.filter(c => c.done).length ?? 0
 
   return (
-    <div style={{
-      background: B.surface,
-      border: `1px solid ${isUrgent ? B.red + '33' : B.border}`,
-      borderRadius: 16,
-      padding: '16px 18px',
-      marginBottom: 12,
-    }}>
+    <div
+      onClick={onSelect}
+      style={{
+        background: B.surface,
+        border: `1px solid ${isUrgent ? B.red + '33' : B.border}`,
+        borderRadius: 16,
+        padding: '16px 18px',
+        marginBottom: compact ? 0 : 12,
+        cursor: onSelect ? 'pointer' : 'default',
+      }}
+    >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
         <div style={{ flex: 1, marginRight: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
@@ -1108,8 +1437,8 @@ function ActiveBountyCard({
           </div>
           {isAdmin && (
             <div style={{ display: 'flex', gap: 5 }}>
-              <button onClick={onToggle} style={{ fontSize: 10, color: B.textTer, background: 'none', border: `1px solid ${B.border}`, borderRadius: 6, padding: '2px 7px', cursor: 'pointer' }}>Pause</button>
-              <button onClick={onDelete} style={{ fontSize: 10, color: B.red, background: 'none', border: `1px solid ${B.red}44`, borderRadius: 6, padding: '2px 7px', cursor: 'pointer' }}>×</button>
+              <button onClick={e => { e.stopPropagation(); onToggle() }} style={{ fontSize: 10, color: B.textTer, background: 'none', border: `1px solid ${B.border}`, borderRadius: 6, padding: '2px 7px', cursor: 'pointer' }}>Pause</button>
+              <button onClick={e => { e.stopPropagation(); onDelete() }} style={{ fontSize: 10, color: B.red, background: 'none', border: `1px solid ${B.red}44`, borderRadius: 6, padding: '2px 7px', cursor: 'pointer' }}>×</button>
             </div>
           )}
         </div>
@@ -1146,14 +1475,34 @@ function ActiveBountyCard({
 }
 
 function CompletedCard({
-  bounty, winner, isAdmin, onMarkPaid,
+  bounty, winner, isAdmin, onMarkPaid, onMarkUnpaid, onSelect,
 }: {
   bounty: Bounty
   winner: Installer | null
   isAdmin: boolean
   onMarkPaid: () => void
+  onMarkUnpaid: () => void
+  onSelect?: () => void
 }) {
-  const isPaid = !!bounty.paid
+  const [paid, setPaid] = useState(!!bounty.paid)
+  const [paidAt, setPaidAt] = useState<string | null>(bounty.paid_at)
+  const [confirming, setConfirming] = useState<'pay' | 'unpay' | null>(null)
+
+  function confirmPay() {
+    const now = new Date().toISOString()
+    setPaid(true)
+    setPaidAt(now)
+    setConfirming(null)
+    onMarkPaid()
+  }
+
+  function confirmUnpay() {
+    setPaid(false)
+    setPaidAt(null)
+    setConfirming(null)
+    onMarkUnpaid()
+  }
+
   return (
     <div style={{
       background: B.surface,
@@ -1162,7 +1511,7 @@ function CompletedCard({
       padding: '13px 16px',
       marginBottom: 8,
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div onClick={onSelect} style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: onSelect ? 'pointer' : 'default' }}>
         <div style={{
           width: 34, height: 34, borderRadius: 8,
           background: winner ? `${B.yellow}18` : B.surface2,
@@ -1188,43 +1537,85 @@ function CompletedCard({
         )}
       </div>
 
-      {/* Payout row — admin only */}
+      {/* Payout section — admin only */}
       {winner && isAdmin && (
-        <div style={{
-          marginTop: 10, paddingTop: 10, borderTop: `1px solid ${B.border}`,
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        }}>
-          {isPaid ? (
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${B.border}` }}>
+
+          {/* Payment log */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: confirming ? 10 : 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{
-                fontSize: 10, fontWeight: 800, color: B.green, textTransform: 'uppercase',
-                letterSpacing: '0.08em', background: B.green + '18',
-                border: `1px solid ${B.green}33`, borderRadius: 5, padding: '2px 7px',
-              }}>✓ Paid</span>
-              {bounty.paid_at && (
-                <span style={{ fontSize: 10, color: B.textTer }}>
-                  {fmtDate(bounty.paid_at.slice(0, 10))}
-                </span>
+              {paid ? (
+                <>
+                  <span style={{
+                    fontSize: 10, fontWeight: 800, color: B.green, textTransform: 'uppercase',
+                    letterSpacing: '0.08em', background: B.green + '18',
+                    border: `1px solid ${B.green}33`, borderRadius: 5, padding: '2px 7px',
+                  }}>✓ Paid</span>
+                  {paidAt && (
+                    <span style={{ fontSize: 10, color: B.textTer }}>
+                      {new Date(paidAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span style={{
+                  fontSize: 10, fontWeight: 700, color: B.orange, textTransform: 'uppercase',
+                  letterSpacing: '0.08em', background: B.orange + '14',
+                  border: `1px solid ${B.orange}33`, borderRadius: 5, padding: '2px 7px',
+                }}>⚠ Unpaid</span>
               )}
             </div>
-          ) : (
-            <span style={{
-              fontSize: 10, fontWeight: 700, color: B.orange, textTransform: 'uppercase',
-              letterSpacing: '0.08em', background: B.orange + '14',
-              border: `1px solid ${B.orange}33`, borderRadius: 5, padding: '2px 7px',
-            }}>⚠ Unpaid</span>
+            {confirming ? (
+              <button
+                onClick={() => setConfirming(null)}
+                style={{ fontSize: 11, color: B.textTer, background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px' }}
+              >
+                Cancel
+              </button>
+            ) : paid ? (
+              <button
+                onClick={() => setConfirming('unpay')}
+                style={{ fontSize: 11, fontWeight: 600, color: B.textTer, background: 'none', border: `1px solid ${B.border}`, borderRadius: 8, padding: '4px 10px', cursor: 'pointer' }}
+              >
+                Mark as Unpaid
+              </button>
+            ) : (
+              <button
+                onClick={() => setConfirming('pay')}
+                style={{ fontSize: 11, fontWeight: 700, color: B.green, background: B.green + '14', border: `1px solid ${B.green}33`, borderRadius: 8, padding: '4px 10px', cursor: 'pointer' }}
+              >
+                Mark as Paid
+              </button>
+            )}
+          </div>
+
+          {/* Inline confirmation */}
+          {confirming === 'pay' && (
+            <div style={{ background: B.green + '0C', border: `1px solid ${B.green}28`, borderRadius: 10, padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+              <div style={{ fontSize: 12, color: B.textSec, lineHeight: 1.4 }}>
+                Confirm paying <strong style={{ color: B.text }}>{winner.name}</strong> <strong style={{ color: B.green }}>{bounty.reward}</strong>?
+              </div>
+              <button
+                onClick={confirmPay}
+                style={{ fontSize: 12, fontWeight: 800, color: B.bg, background: B.green, border: 'none', borderRadius: 8, padding: '6px 14px', cursor: 'pointer', flexShrink: 0 }}
+              >
+                Yes, paid
+              </button>
+            </div>
           )}
-          {!isPaid && (
-            <button
-              onClick={onMarkPaid}
-              style={{
-                fontSize: 11, fontWeight: 700, color: B.green,
-                background: B.green + '14', border: `1px solid ${B.green}33`,
-                borderRadius: 8, padding: '4px 10px', cursor: 'pointer',
-              }}
-            >
-              Mark as Paid
-            </button>
+
+          {confirming === 'unpay' && (
+            <div style={{ background: B.orange + '0C', border: `1px solid ${B.orange}28`, borderRadius: 10, padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+              <div style={{ fontSize: 12, color: B.textSec, lineHeight: 1.4 }}>
+                Clear the payment record for <strong style={{ color: B.text }}>{bounty.title}</strong>? Only do this if it was logged by mistake.
+              </div>
+              <button
+                onClick={confirmUnpay}
+                style={{ fontSize: 12, fontWeight: 800, color: B.bg, background: B.orange, border: 'none', borderRadius: 8, padding: '6px 14px', cursor: 'pointer', flexShrink: 0 }}
+              >
+                Clear
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -1375,6 +1766,279 @@ function RedemptionCard() {
   )
 }
 
+// ── bounty detail modal ───────────────────────────────────────────────────────
+
+function BountyDetailModal({
+  bounty, board, facts, installers, logs, meInstaller, isAdmin, isGuest,
+  onClose, onAward, onMarkPaid, onMarkUnpaid, onConfirmSocial,
+}: {
+  bounty: Bounty
+  board: InstProg[]
+  facts: string[]
+  installers: Installer[]
+  logs: Log[]
+  meInstaller?: Installer | null
+  isAdmin: boolean
+  isGuest: boolean
+  onClose: () => void
+  onAward: (ip: InstProg) => void
+  onMarkPaid: () => void
+  onMarkUnpaid: () => void
+  onConfirmSocial: (condId: string, installerId: string) => Promise<{ error: string | null }>
+}) {
+  const conditions  = bounty.conditions ?? []
+  const leader      = board[0]
+  const winnerInst  = bounty.winner_installer_id ? installers.find(i => i.id === bounty.winner_installer_id) ?? null : null
+  const meProgress  = meInstaller ? board.find(ip => ip.installer.id === meInstaller.id) : null
+  const myMove      = (!bounty.winner_installer_id && meInstaller) ? genMyNextMove(meInstaller.id, bounty, board) : null
+  const iAmLeading  = meProgress ? meProgress.installer.id === leader?.installer.id : false
+  const isHot       = !bounty.winner_installer_id && isHotBounty(board)
+  const isParlay    = conditions.length > 1
+  const tLeft       = fmtTimeLeft(bounty.end_date)
+  const tColor      = timeLeftColor(bounty.end_date)
+  const dLeft       = daysLeftFromEnd(bounty.end_date)
+  const isUrgent    = dLeft != null && dLeft <= 2 && dLeft >= 0 && !bounty.winner_installer_id
+
+  const todayStr = new Date().toDateString()
+  const todayByInstaller = board.slice(0, 6).map(ip => {
+    const instLogs = logs.filter(r =>
+      r.installer_id === ip.installer.id && r.status === 'Complete' &&
+      r.start_ts && new Date(r.start_ts).toDateString() === todayStr
+    )
+    const sqft   = instLogs.filter(r => !r.is_color_change).reduce((s, r) => s + (r.sqft ?? 0), 0)
+    const panels = instLogs.filter(r => !r.is_color_change).length
+    const mins   = instLogs.reduce((s, r) => s + (r.mins ?? 0), 0)
+    return { ...ip, todaySqft: sqft, todayPanels: panels, todayMins: mins }
+  }).filter(x => x.todaySqft > 0 || x.todayPanels > 0)
+
+  const COND_EXPLAIN: Record<ConditionType, (v: number) => string> = {
+    sqft_total:       () => 'Total sqft of commercial wraps installed in the period',
+    sqft_cc:          () => 'Total sqft of color-change wraps installed',
+    panels:           () => 'Number of commercial panels completed',
+    panels_cc:        () => 'Number of color-change panels completed',
+    sqft_per_hr:      () => 'Rolling average sqft/hr across all commercial jobs',
+    total_hours:      () => 'Total clock time logged',
+    work_days:        () => 'Distinct calendar days with any completed job',
+    sqft_single_day:  () => 'Best single day sqft total — only your best day counts',
+    panels_single_day:() => 'Best single day panel count',
+    best_sqft_hr_day: () => 'Best single day sqft/hr rate',
+    early_clock_in:   (v) => `Must clock in before ${minsToTime(v)} on at least one day`,
+    first_clock_in:   () => 'Be the earliest installer to clock in on any given day',
+    social_action:    () => 'Public commitment — first to claim and lock it in gets credit for this leg',
+  }
+
+  return (
+    <div
+      style={{ position: 'fixed', inset: 0, zIndex: 9990, background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', backdropFilter: 'blur(3px)' }}
+      onClick={onClose}
+    >
+      <div
+        className="bounty-modal-sheet"
+        onClick={e => e.stopPropagation()}
+        style={{ background: B.bg, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 780, maxHeight: '90vh', overflowY: 'auto', paddingBottom: 44 }}
+      >
+        {/* Pull handle */}
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 4px' }}>
+          <div style={{ width: 40, height: 4, borderRadius: 2, background: B.surface3 }} />
+        </div>
+
+        {/* Header */}
+        <div style={{ padding: '10px 18px 14px', borderBottom: `1px solid ${B.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
+              {isHot && <span style={{ fontSize: 9, fontWeight: 900, color: B.orange, letterSpacing: '0.12em', textTransform: 'uppercase', background: B.orange + '18', border: `1px solid ${B.orange}44`, borderRadius: 5, padding: '2px 6px' }}>🔥 Hot</span>}
+              {isParlay && <span style={{ fontSize: 9, fontWeight: 700, color: B.purple, textTransform: 'uppercase', background: B.purple + '18', padding: '2px 6px', borderRadius: 4, letterSpacing: '0.08em' }}>⚡ Parlay</span>}
+              {bounty.winner_installer_id && <span style={{ fontSize: 9, fontWeight: 800, color: B.yellow, textTransform: 'uppercase', background: B.yellow + '14', border: `1px solid ${B.yellow}33`, borderRadius: 5, padding: '2px 6px', letterSpacing: '0.1em' }}>🏆 Closed</span>}
+            </div>
+            <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-0.02em', marginBottom: 8 }}>{bounty.title}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: `linear-gradient(90deg, ${B.yellow}20, ${B.yellow}10)`, border: `1px solid ${B.yellow}55`, borderRadius: 8, padding: '4px 12px' }}>
+                <span style={{ fontSize: 9, fontWeight: 700, color: B.yellow, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Prize</span>
+                <span style={{ fontSize: 14, fontWeight: 800, color: B.yellow }}>{bounty.reward}</span>
+              </div>
+              {!bounty.winner_installer_id && <span style={{ fontSize: 10, color: B.textTer }}>Winner takes all · No splits</span>}
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+            <div className={isUrgent ? 'bounty-urgency' : ''} style={{ fontSize: 12, fontWeight: 700, color: tColor, background: tColor + '18', border: `1px solid ${tColor}44`, borderRadius: 8, padding: '3px 8px', whiteSpace: 'nowrap' }}>{tLeft}</div>
+            <div style={{ fontSize: 10, color: B.textTer, whiteSpace: 'nowrap' }}>{fmtDate(bounty.start_date)}{bounty.end_date ? ` – ${fmtDate(bounty.end_date)}` : ''}</div>
+            <button onClick={onClose} style={{ fontSize: 14, color: B.textTer, background: B.surface2, border: 'none', borderRadius: 8, padding: '4px 10px', cursor: 'pointer', marginTop: 4 }}>✕</button>
+          </div>
+        </div>
+
+        <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+          {/* Winner banner */}
+          {winnerInst && (
+            <div style={{ background: `linear-gradient(90deg, ${B.yellow}20, ${B.yellow}08)`, border: `1px solid ${B.yellow}55`, borderRadius: 12, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 38, height: 38, borderRadius: '50%', background: winnerInst.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800, color: B.bg, boxShadow: `0 0 16px ${winnerInst.color}55` }}>{winnerInst.name.charAt(0)}</div>
+              <div>
+                <div style={{ fontSize: 10, color: B.yellow, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 2 }}>Winner</div>
+                <div style={{ fontSize: 17, fontWeight: 800 }}>{winnerInst.name}</div>
+              </div>
+              <span style={{ marginLeft: 'auto', fontSize: 26 }}>🏆</span>
+            </div>
+          )}
+
+          {/* Payout status */}
+          {winnerInst && isAdmin && (
+            <CompletedCard bounty={bounty} winner={winnerInst} isAdmin={isAdmin} onMarkPaid={onMarkPaid} onMarkUnpaid={onMarkUnpaid} />
+          )}
+
+          {/* YOU VS LEADER */}
+          {meProgress && !bounty.winner_installer_id && (() => {
+            const bi = conditions.length > 1 ? meProgress.conds.reduce((mi, c, i, arr) => c.pct < arr[mi].pct ? i : mi, 0) : 0
+            const cond = conditions[bi]
+            if (!cond) return null
+            const type = cond.condition_type as ConditionType
+            const myVal     = meProgress.conds[bi]?.value ?? 0
+            const leaderVal = leader?.conds[bi]?.value ?? 0
+            let myStr = '', leaderStr = '', gapStr = ''
+            if (type === 'sqft_total' || type === 'sqft_cc' || type === 'sqft_single_day') {
+              myStr = `${myVal.toFixed(0)} sqft`; leaderStr = `${leaderVal.toFixed(0)} sqft`; gapStr = `${(leaderVal - myVal).toFixed(0)} sqft`
+            } else if (type === 'panels' || type === 'panels_cc' || type === 'panels_single_day') {
+              myStr = `${myVal} panels`; leaderStr = `${leaderVal} panels`; gapStr = `${Math.round(leaderVal - myVal)} panels`
+            } else if (type === 'sqft_per_hr' || type === 'best_sqft_hr_day') {
+              myStr = `${myVal.toFixed(1)} sqft/hr`; leaderStr = `${leaderVal.toFixed(1)} sqft/hr`; gapStr = `${(leaderVal - myVal).toFixed(1)} sqft/hr`
+            } else if (type === 'total_hours') {
+              myStr = `${myVal.toFixed(1)}h`; leaderStr = `${leaderVal.toFixed(1)}h`; gapStr = `${(leaderVal - myVal).toFixed(1)}h`
+            } else if (type === 'work_days') {
+              myStr = `${myVal} days`; leaderStr = `${leaderVal} days`; gapStr = `${Math.round(leaderVal - myVal)} days`
+            } else return null
+            if (iAmLeading) {
+              return <div style={{ background: B.green + '0A', border: `1px solid ${B.green}33`, borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: B.green }}>You're in the lead</span>
+                <span style={{ fontSize: 12, color: B.textTer }}>{(meProgress.overallPct * 100).toFixed(0)}% complete</span>
+              </div>
+            }
+            return (
+              <div style={{ background: B.surface2, borderRadius: 10, padding: '10px 14px', display: 'flex', gap: 1 }}>
+                <div style={{ flex: 1, textAlign: 'center' }}>
+                  <div style={{ fontSize: 9, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 3, fontWeight: 700 }}>You</div>
+                  <div style={{ fontSize: 15, fontWeight: 800 }}>{myStr}</div>
+                </div>
+                <div style={{ flex: 1, textAlign: 'center', borderLeft: `1px solid ${B.border}`, borderRight: `1px solid ${B.border}` }}>
+                  <div style={{ fontSize: 9, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 3, fontWeight: 700 }}>Leader</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: B.yellow }}>{leaderStr}</div>
+                </div>
+                <div style={{ flex: 1, textAlign: 'center' }}>
+                  <div style={{ fontSize: 9, color: B.orange, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 3, fontWeight: 700 }}>Gap</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: B.orange }}>{gapStr}</div>
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* MY NEXT MOVE */}
+          {myMove && (
+            <div style={{ background: `${B.yellow}0A`, border: `1px solid ${B.yellow}33`, borderRadius: 12, padding: '11px 14px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+              <span style={{ color: B.yellow, fontSize: 13, flexShrink: 0, marginTop: 1 }}>→</span>
+              <div>
+                <div style={{ fontSize: 9, fontWeight: 800, color: B.yellow, textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 4 }}>Your move</div>
+                <div style={{ fontSize: 13, color: B.text, fontWeight: 700, lineHeight: 1.4 }}>{myMove}</div>
+                {iAmLeading && <div style={{ fontSize: 11, color: B.green, fontWeight: 600, marginTop: 4 }}>You're leading — don't let up</div>}
+              </div>
+            </div>
+          )}
+
+          {/* Conditions */}
+          {conditions.length > 0 && (
+            <div style={{ background: B.surface, borderRadius: 12, padding: '14px 14px 6px' }}>
+              <div style={{ fontSize: 9, fontWeight: 700, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 12 }}>
+                {isParlay ? 'All conditions required · Parlay' : 'Condition'}
+              </div>
+              {isParlay && leader && leader.conds.filter(c => c.done).length === conditions.length - 1 && leader.conds.some(c => c.done) && (
+                <div style={{ background: `${B.orange}18`, border: `1.5px solid ${B.orange}66`, borderRadius: 8, padding: '8px 12px', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span>⚡</span>
+                  <div style={{ fontSize: 12, color: B.orange, fontWeight: 700 }}>Final Leg — one more condition to win</div>
+                </div>
+              )}
+              {conditions.map((cond, ci) =>
+                cond.condition_type === 'social_action' ? (
+                  <SocialActionRow
+                    key={cond.id}
+                    cond={cond}
+                    meInstaller={meInstaller}
+                    installers={installers}
+                    isGuest={isGuest}
+                    onConfirm={onConfirmSocial}
+                  />
+                ) : (
+                  <ConditionRow key={cond.id} cond={cond} prog={leader?.conds[ci]} showRemaining />
+                )
+              )}
+            </div>
+          )}
+
+          {/* Full leaderboard */}
+          <div style={{ background: B.surface, borderRadius: 12, padding: '14px 14px 10px' }}>
+            <div style={{ fontSize: 9, fontWeight: 700, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 10 }}>Standings</div>
+            <MiniLeaderboard board={board} conditions={conditions} winnerId={bounty.winner_installer_id} onAward={onAward} isAdmin={isAdmin} />
+          </div>
+
+          {/* TODAY */}
+          {todayByInstaller.length > 0 && (
+            <div style={{ background: B.surface, borderRadius: 12, padding: '14px 14px 10px' }}>
+              <div style={{ fontSize: 9, fontWeight: 700, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 10 }}>Today</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                {todayByInstaller.map(x => (
+                  <div key={x.installer.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 24, height: 24, borderRadius: '50%', background: x.installer.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800, color: B.bg, flexShrink: 0 }}>{x.installer.name.charAt(0)}</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, flex: 1 }}>{x.installer.name.split(' ')[0]}</div>
+                    <div style={{ fontSize: 12, color: B.textSec, display: 'flex', gap: 8 }}>
+                      {x.todaySqft > 0 && <span>{x.todaySqft.toFixed(0)} sqft</span>}
+                      {x.todayPanels > 0 && <span>{x.todayPanels} panels</span>}
+                      {x.todayMins > 0 && <span style={{ color: B.textTer }}>{(x.todayMins / 60).toFixed(1)}h</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Fun facts */}
+          {facts.length > 0 && !bounty.winner_installer_id && (
+            <div style={{ background: B.surface, borderRadius: 12, padding: '14px 14px 10px' }}>
+              <div style={{ fontSize: 9, fontWeight: 700, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 10 }}>Analysis</div>
+              {facts.map((f, i) => (
+                <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 8 }}>
+                  <span style={{ color: B.yellow, fontSize: 11, flexShrink: 0, marginTop: 1 }}>◆</span>
+                  <span style={{ fontSize: 13, color: B.textSec, lineHeight: 1.55 }}>{f}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* How it works */}
+          <div style={{ background: B.surface, borderRadius: 12, padding: '14px 14px 10px' }}>
+            <div style={{ fontSize: 9, fontWeight: 700, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 10 }}>How it works</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {conditions.map((cond, i) => {
+                const type = cond.condition_type as ConditionType
+                return (
+                  <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                    {conditions.length > 1 && <span style={{ fontSize: 10, fontWeight: 700, color: B.textTer, minWidth: 16, marginTop: 1 }}>{i + 1}.</span>}
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: B.text, marginBottom: 2 }}>{condLabel(type, cond.value, cond)}</div>
+                      <div style={{ fontSize: 11, color: B.textTer, lineHeight: 1.5 }}>{COND_EXPLAIN[type](cond.value)}</div>
+                    </div>
+                  </div>
+                )
+              })}
+              {isParlay && (
+                <div style={{ fontSize: 11, color: B.purple, fontWeight: 600, padding: '8px 10px', background: B.purple + '0C', borderRadius: 8 }}>
+                  All conditions must be met to win. Highest overall progress wins if no one finishes.
+                </div>
+              )}
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── demo data ─────────────────────────────────────────────────────────────────
 
 function generateDemoBounties(installers: Installer[]): Array<{
@@ -1515,7 +2179,27 @@ function generateDemoBounties(installers: Installer[]): Array<{
 
 // ── form config ───────────────────────────────────────────────────────────────
 
-interface CondRow { id: number; type: ConditionType; valueStr: string }
+interface CondRow { id: number; type: ConditionType; valueStr: string; socialActionType?: string }
+
+interface StarterTemplate {
+  title: string
+  reward: string
+  daysEnd: number | null
+  conditions: { type: ConditionType; valueStr: string; socialActionType?: string }[]
+}
+
+const STARTER_TEMPLATES: StarterTemplate[] = [
+  { title: 'First to 4,500 sqft', reward: '$150 cash', daysEnd: 30, conditions: [{ type: 'sqft_total', valueStr: '4500' }] },
+  { title: '50 Panels', reward: '$125 cash', daysEnd: 30, conditions: [{ type: 'panels', valueStr: '50' }] },
+  { title: 'Early Bird Sprint', reward: '$75 gift card', daysEnd: 14, conditions: [{ type: 'early_clock_in', valueStr: '07:30' }] },
+  { title: 'Speed + Volume Parlay', reward: '$200 cash', daysEnd: 21, conditions: [{ type: 'sqft_total', valueStr: '600' }, { type: 'sqft_per_hr', valueStr: '25' }] },
+  { title: 'Project Grinder', reward: '$100 cash', daysEnd: 30, conditions: [{ type: 'work_days', valueStr: '20' }] },
+  { title: 'First Mover Parlay', reward: '$100 cash + Monday off', daysEnd: 21, conditions: [{ type: 'first_clock_in', valueStr: '5' }, { type: 'sqft_total', valueStr: '500' }] },
+  { title: 'Speed Demon', reward: '$50 cash', daysEnd: 14, conditions: [{ type: 'best_sqft_hr_day', valueStr: '40' }] },
+  { title: 'Big Month', reward: '$200 cash + Friday off', daysEnd: 30, conditions: [{ type: 'sqft_total', valueStr: '1000' }] },
+  { title: 'Buy Lunch Parlay', reward: 'Winner buys + $50 back', daysEnd: 21, conditions: [{ type: 'panels', valueStr: '30' }, { type: 'social_action', valueStr: '1', socialActionType: 'buy_lunch' }] },
+  { title: 'CC Crusher', reward: '$100 cash', daysEnd: 21, conditions: [{ type: 'sqft_cc', valueStr: '800' }] },
+]
 
 const COND_GROUPS: { label: string; types: { type: ConditionType; label: string; placeholder: string; help: string }[] }[] = [
   {
@@ -1546,7 +2230,14 @@ const COND_GROUPS: { label: string; types: { type: ConditionType; label: string;
   {
     label: 'Early Start',
     types: [
-      { type: 'early_clock_in',    label: 'Clock In Before Time',  placeholder: '',     help: 'First to clock in before this time wins' },
+      { type: 'early_clock_in',  label: 'Clock In Before Time',   placeholder: '',  help: 'Clock in before this time on any day' },
+      { type: 'first_clock_in',  label: 'First to Clock In (days)', placeholder: '5', help: 'Be the first installer to clock in on N different days' },
+    ],
+  },
+  {
+    label: 'Social Commitment',
+    types: [
+      { type: 'social_action', label: 'Social Action', placeholder: '', help: 'Winner publicly commits to a social action (buy lunch/coffee)' },
     ],
   },
 ]
@@ -1557,18 +2248,19 @@ const ALL_COND_CONFIG = COND_GROUPS.flatMap(g => g.types)
 
 export default function Bounties() {
   const { logs, installers } = useAppData()
-  const { isAdmin }          = useAuth()
-  const { bounties, loading, createBounty, deleteBounty, toggleActive, awardWin, markPaid } = useBounties()
+  const { isAdmin, installer: me, isGuest } = useAuth()
+  const { bounties, loading, createBounty, deleteBounty, toggleActive, awardWin, markPaid, markUnpaid, confirmSocialAction } = useBounties()
 
   const condIdRef = useRef(0)
   function newCondRow(type: ConditionType = 'sqft_total'): CondRow {
     return { id: ++condIdRef.current, type, valueStr: '' }
   }
 
-  const [showCreate,  setShowCreate]  = useState(false)
-  const [testWinOpen, setTestWinOpen] = useState(false)
-  const [showDemo,    setShowDemo]    = useState(true)
-  const [toast,       setToast]       = useState('')
+  const [showCreate,      setShowCreate]      = useState(false)
+  const [testWinOpen,     setTestWinOpen]     = useState(false)
+  const [showDemo,        setShowDemo]        = useState(true)
+  const [toast,           setToast]           = useState('')
+  const [selectedBountyId, setSelectedBountyId] = useState<string | null>(null)
 
   const demoBounties = useMemo(() => generateDemoBounties(installers), [installers])
   const [warn,       setWarn]       = useState<WarnConfig | null>(null)
@@ -1594,6 +2286,34 @@ export default function Bounties() {
   }, [bounties, installers, logs])
 
   const featured = activeBounties[0] ?? null
+
+  const selectedEntry = useMemo(() => {
+    if (!selectedBountyId) return null
+    const real = bounties.find(b => b.id === selectedBountyId)
+    if (real) {
+      const { board, facts } = boardsByBounty.get(real.id) ?? { board: [], facts: [] }
+      return { bounty: real, board, facts, isDemo: false }
+    }
+    const demo = demoBounties.find(e => e.bounty.id === selectedBountyId)
+    if (demo) return { bounty: demo.bounty as Bounty, board: demo.board, facts: demo.facts, isDemo: true }
+    return null
+  }, [selectedBountyId, bounties, boardsByBounty, demoBounties])
+
+  const todayStr = new Date().toDateString()
+
+  const todayFirstClockIn = useMemo(() => {
+    // Use all logs (complete or active jobs); pick earliest start_ts today
+    const todayAll = logs.filter(r => r.start_ts && new Date(r.start_ts).toDateString() === todayStr)
+    if (!todayAll.length) return null
+    const earliest = todayAll.reduce((a, b) =>
+      new Date(a.start_ts) < new Date(b.start_ts) ? a : b
+    )
+    const inst = installers.find(i => i.id === earliest.installer_id)
+    if (!inst) return null
+    const d = new Date(earliest.start_ts)
+    const timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    return { name: inst.name.split(' ')[0], time: timeStr, color: inst.color }
+  }, [logs, installers]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleAward(bounty: Bounty, ip: InstProg) {
     setWarn({
@@ -1623,14 +2343,34 @@ export default function Bounties() {
   }
 
   function handleMarkPaid(bounty: Bounty) {
+    const winnerName = bounty.winner_installer_id
+      ? (installers.find(i => i.id === bounty.winner_installer_id)?.name ?? 'winner')
+      : 'winner'
     setWarn({
-      title: 'Mark as paid?',
-      body: `Confirm payout of "${bounty.reward}" to ${bounty.winner_installer_id ? (installers.find(i => i.id === bounty.winner_installer_id)?.name.split(' ')[0] ?? 'winner') : 'winner'}.`,
-      ok: '✓ Mark Paid', cancel: 'Cancel',
+      title: 'Confirm payout',
+      body: `Pay ${winnerName} ${bounty.reward} for "${bounty.title}"? This cannot be undone without admin action.`,
+      ok: '✓ Confirm Paid', cancel: 'Cancel',
       onOk: async () => {
         const { error } = await markPaid(bounty.id)
         if (error) setToast('Error: ' + error)
-        else setToast('Marked as paid!')
+        else setToast(`Payout recorded for ${winnerName}`)
+      },
+    })
+  }
+
+  function handleMarkUnpaid(bounty: Bounty) {
+    const winnerName = bounty.winner_installer_id
+      ? (installers.find(i => i.id === bounty.winner_installer_id)?.name ?? 'winner')
+      : 'winner'
+    setWarn({
+      title: 'Reverse payout record?',
+      body: `This will mark "${bounty.title}" as unpaid and clear the payment date for ${winnerName}. Only do this if the payment was logged by mistake.`,
+      ok: 'Yes, mark unpaid', cancel: 'Cancel',
+      danger: true,
+      onOk: async () => {
+        const { error } = await markUnpaid(bounty.id)
+        if (error) setToast('Error: ' + error)
+        else setToast('Payout record cleared')
       },
     })
   }
@@ -1651,7 +2391,7 @@ export default function Bounties() {
     if (!fTitle.trim() || !fReward.trim() || !fStart) {
       setToast('Title, reward, and start date are required'); return
     }
-    if (fConds.some(c => !c.valueStr)) {
+    if (fConds.some(c => c.type !== 'social_action' && !c.valueStr)) {
       setToast('All conditions need a value'); return
     }
     setSaving(true)
@@ -1663,7 +2403,8 @@ export default function Bounties() {
       conditions: fConds.map(c => ({
         conditionType: c.type,
         operator: '>=',
-        value: c.type === 'early_clock_in' ? parseMins(c.valueStr) : parseFloat(c.valueStr),
+        value: c.type === 'early_clock_in' ? parseMins(c.valueStr) : parseFloat(c.valueStr) || 1,
+        socialActionType: c.type === 'social_action' ? (c.socialActionType ?? 'buy_lunch') : undefined,
       })),
     })
     setSaving(false)
@@ -1687,6 +2428,24 @@ export default function Bounties() {
       <style>{BOUNTY_CSS}</style>
       <WarnModal modal={warn} onClose={() => setWarn(null)} />
       {toast && <Toast msg={toast} onDone={() => setToast('')} />}
+
+      {selectedEntry && (
+        <BountyDetailModal
+          bounty={selectedEntry.bounty}
+          board={selectedEntry.board}
+          facts={selectedEntry.facts}
+          installers={installers}
+          logs={selectedEntry.isDemo ? [] : logs}
+          meInstaller={me}
+          isAdmin={selectedEntry.isDemo ? false : isAdmin}
+          isGuest={isGuest}
+          onClose={() => setSelectedBountyId(null)}
+          onAward={ip => { if (!selectedEntry.isDemo) handleAward(selectedEntry.bounty, ip) }}
+          onMarkPaid={() => { if (!selectedEntry.isDemo) handleMarkPaid(selectedEntry.bounty) }}
+          onMarkUnpaid={() => { if (!selectedEntry.isDemo) handleMarkUnpaid(selectedEntry.bounty) }}
+          onConfirmSocial={confirmSocialAction}
+        />
+      )}
 
       {testWinOpen && installers.length > 0 && (
         <WinTestOverlay
@@ -1732,14 +2491,75 @@ export default function Bounties() {
         </div>
       </div>
 
+      {/* Today's First Clock-In */}
+      {todayFirstClockIn && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          background: B.surface, border: `1px solid ${B.border}`,
+          borderRadius: 12, padding: '10px 16px', marginBottom: 16,
+        }}>
+          <div style={{
+            width: 28, height: 28, borderRadius: '50%',
+            background: todayFirstClockIn.color,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 12, fontWeight: 800, color: B.bg, flexShrink: 0,
+          }}>
+            {todayFirstClockIn.name.charAt(0)}
+          </div>
+          <div>
+            <div style={{ fontSize: 9, fontWeight: 700, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Today's First Clock-In</div>
+            <div style={{ fontSize: 13, fontWeight: 700, marginTop: 2 }}>
+              {todayFirstClockIn.name} <span style={{ color: B.textTer, fontWeight: 500 }}>·</span> <span style={{ color: B.yellow }}>{todayFirstClockIn.time}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Create form */}
       {showCreate && (
         <div style={{
           background: B.surface, border: `1.5px solid ${B.yellow}28`,
           borderRadius: 16, padding: 20, marginBottom: 24,
         }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: B.yellow, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: B.yellow, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 12 }}>
             New Bounty
+          </div>
+
+          {/* Template quick-pick */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 10, color: B.textTer, fontWeight: 600, marginBottom: 7 }}>Quick start from template</div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {STARTER_TEMPLATES.map(tpl => (
+                <button
+                  key={tpl.title}
+                  onClick={() => {
+                    const today = new Date().toISOString().slice(0, 10)
+                    const endDate = tpl.daysEnd != null
+                      ? new Date(Date.now() + tpl.daysEnd * 86400000).toISOString().slice(0, 10)
+                      : ''
+                    setFTitle(tpl.title)
+                    setFReward(tpl.reward)
+                    setFStart(today)
+                    setFEnd(endDate)
+                    setFConds(tpl.conditions.map(c => ({
+                      id: ++condIdRef.current,
+                      type: c.type,
+                      valueStr: c.valueStr,
+                      socialActionType: c.socialActionType,
+                    })))
+                  }}
+                  style={{
+                    fontSize: 11, fontWeight: 600,
+                    color: B.textSec, background: B.surface2,
+                    border: `1px solid ${B.border}`, borderRadius: 8,
+                    padding: '5px 10px', cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {tpl.title}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div style={{ marginBottom: 10 }}>
@@ -1795,7 +2615,18 @@ export default function Bounties() {
                       ))}
                     </select>
 
-                    {c.type === 'early_clock_in' ? (
+                    {c.type === 'social_action' ? (
+                      <select
+                        value={c.socialActionType ?? 'buy_lunch'}
+                        onChange={e => setFConds(prev => prev.map((r, i) =>
+                          i === idx ? { ...r, socialActionType: e.target.value, valueStr: '1' } : r
+                        ))}
+                        style={{ ...inp, width: 'auto', flex: 'none', padding: '9px 10px', cursor: 'pointer' }}
+                      >
+                        <option value="buy_lunch">Buy lunch 🍔</option>
+                        <option value="buy_coffee">Buy coffee ☕</option>
+                      </select>
+                    ) : c.type === 'early_clock_in' ? (
                       <input
                         type="time"
                         value={c.valueStr}
@@ -1881,32 +2712,38 @@ export default function Bounties() {
             onAward={ip => handleAward(featured, ip)}
             onToggle={() => handleToggle(featured)}
             onDelete={() => handleDelete(featured)}
+            meInstaller={me}
+            onSelect={() => setSelectedBountyId(featured.id)}
           />
         )
       })()}
 
-      {/* Remaining active bounties */}
+      {/* Remaining active bounties — 2-column grid */}
       {activeBounties.length > 1 && (
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Active</div>
             <div style={{ flex: 1, height: 1, background: B.border }} />
           </div>
-          {activeBounties.slice(1).map(b => {
-            const { board, facts } = boardsByBounty.get(b.id) ?? { board: [], facts: [] }
-            return (
-              <ActiveBountyCard
-                key={b.id}
-                bounty={b}
-                board={board}
-                facts={facts}
-                isAdmin={isAdmin}
-                onAward={ip => handleAward(b, ip)}
-                onToggle={() => handleToggle(b)}
-                onDelete={() => handleDelete(b)}
-              />
-            )
-          })}
+          <div className="bounty-active-grid">
+            {activeBounties.slice(1).map(b => {
+              const { board, facts } = boardsByBounty.get(b.id) ?? { board: [], facts: [] }
+              return (
+                <ActiveBountyCard
+                  key={b.id}
+                  bounty={b}
+                  board={board}
+                  facts={facts}
+                  isAdmin={isAdmin}
+                  onAward={ip => handleAward(b, ip)}
+                  onToggle={() => handleToggle(b)}
+                  onDelete={() => handleDelete(b)}
+                  compact
+                  onSelect={() => setSelectedBountyId(b.id)}
+                />
+              )
+            })}
+          </div>
         </>
       )}
 
@@ -1918,10 +2755,8 @@ export default function Bounties() {
             <div style={{ flex: 1, height: 1, background: B.border }} />
           </div>
           {completedBounties.map(b => {
-            const w = b.winner_installer_id
-              ? installers.find(i => i.id === b.winner_installer_id) ?? null
-              : null
-            return <CompletedCard key={b.id} bounty={b} winner={w} isAdmin={isAdmin} onMarkPaid={() => handleMarkPaid(b)} />
+            const w = b.winner_installer_id ? installers.find(i => i.id === b.winner_installer_id) ?? null : null
+            return <CompletedCard key={b.id} bounty={b} winner={w} isAdmin={isAdmin} onMarkPaid={() => handleMarkPaid(b)} onMarkUnpaid={() => handleMarkUnpaid(b)} onSelect={() => setSelectedBountyId(b.id)} />
           })}
         </>
       )}
@@ -1964,6 +2799,8 @@ export default function Bounties() {
                 onAward={() => {}}
                 onToggle={() => {}}
                 onDelete={() => {}}
+                meInstaller={me}
+                onSelect={() => setSelectedBountyId(demoBounties[0].bounty.id)}
               />
 
               {/* Active demos */}
@@ -1971,18 +2808,22 @@ export default function Bounties() {
                 <div style={{ fontSize: 10, fontWeight: 700, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Active</div>
                 <div style={{ flex: 1, height: 1, background: B.border }} />
               </div>
-              {demoBounties.slice(1).filter(e => e.bounty.active).map(e => (
-                <ActiveBountyCard
-                  key={e.bounty.id}
-                  bounty={e.bounty}
-                  board={e.board}
-                  facts={e.facts}
-                  isAdmin={false}
-                  onAward={() => {}}
-                  onToggle={() => {}}
-                  onDelete={() => {}}
-                />
-              ))}
+              <div className="bounty-active-grid">
+                {demoBounties.slice(1).filter(e => e.bounty.active).map(e => (
+                  <ActiveBountyCard
+                    key={e.bounty.id}
+                    bounty={e.bounty}
+                    board={e.board}
+                    facts={e.facts}
+                    isAdmin={false}
+                    onAward={() => {}}
+                    onToggle={() => {}}
+                    onDelete={() => {}}
+                    compact
+                    onSelect={() => setSelectedBountyId(e.bounty.id)}
+                  />
+                ))}
+              </div>
 
               {/* Completed demo */}
               {demoBounties.some(e => !e.bounty.active) && (
@@ -1995,7 +2836,7 @@ export default function Bounties() {
                     const w = e.bounty.winner_installer_id
                       ? installers.find(i => i.id === e.bounty.winner_installer_id) ?? null
                       : null
-                    return <CompletedCard key={e.bounty.id} bounty={e.bounty} winner={w} isAdmin={false} onMarkPaid={() => {}} />
+                    return <CompletedCard key={e.bounty.id} bounty={e.bounty} winner={w} isAdmin={true} onMarkPaid={() => {}} onMarkUnpaid={() => {}} onSelect={() => setSelectedBountyId(e.bounty.id)} />
                   })}
                 </>
               )}

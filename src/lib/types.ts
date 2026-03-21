@@ -92,6 +92,8 @@ export type ConditionType =
   | 'panels_single_day'
   | 'best_sqft_hr_day'
   | 'early_clock_in'
+  | 'first_clock_in'
+  | 'social_action'
 
 export interface BountyCondition {
   id: string
@@ -99,6 +101,9 @@ export interface BountyCondition {
   condition_type: ConditionType
   operator: string
   value: number
+  social_action_type?: string | null
+  confirmed_by_installer_id?: string | null
+  confirmed_at?: string | null
   created_at: string
 }
 

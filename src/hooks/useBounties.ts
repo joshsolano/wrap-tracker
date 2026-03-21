@@ -33,7 +33,7 @@ export function useBounties() {
     reward: string
     startDate: string
     endDate: string | null
-    conditions: { conditionType: string; operator: string; value: number }[]
+    conditions: { conditionType: string; operator: string; value: number; socialActionType?: string }[]
   }) {
     const { data, error: err } = await supabase
       .from('bounties')
@@ -53,6 +53,7 @@ export function useBounties() {
           condition_type: c.conditionType,
           operator: c.operator,
           value: c.value,
+          ...(c.socialActionType ? { social_action_type: c.socialActionType } : {}),
         }))
       )
       if (cErr) return { error: cErr.message }
@@ -96,5 +97,34 @@ export function useBounties() {
     return { error: null }
   }
 
-  return { bounties, loading, error, createBounty, deleteBounty, toggleActive, awardWin, markPaid }
+  async function markUnpaid(id: string) {
+    const { error: err } = await supabase
+      .from('bounties')
+      .update({ paid: false, paid_at: null })
+      .eq('id', id)
+    if (err) return { error: err.message }
+    setBounties(prev => prev.map(b => b.id === id ? { ...b, paid: false, paid_at: null } : b))
+    return { error: null }
+  }
+
+  async function confirmSocialAction(conditionId: string, installerId: string) {
+    const now = new Date().toISOString()
+    const { error: err } = await supabase
+      .from('bounty_conditions')
+      .update({ confirmed_by_installer_id: installerId, confirmed_at: now })
+      .eq('id', conditionId)
+      .is('confirmed_by_installer_id', null)
+    if (err) return { error: err.message }
+    setBounties(prev => prev.map(b => ({
+      ...b,
+      conditions: b.conditions?.map(c =>
+        c.id === conditionId
+          ? { ...c, confirmed_by_installer_id: installerId, confirmed_at: now }
+          : c
+      ),
+    })))
+    return { error: null }
+  }
+
+  return { bounties, loading, error, createBounty, deleteBounty, toggleActive, awardWin, markPaid, markUnpaid, confirmSocialAction }
 }
