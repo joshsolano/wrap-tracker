@@ -43,6 +43,26 @@ const BOUNTY_CSS = `
   .bounty-urgency {
     animation: urgency-pulse 1.4s ease-in-out infinite;
   }
+  @keyframes winner-entrance {
+    0%   { transform: scale(0.6) translateY(40px); opacity: 0; }
+    70%  { transform: scale(1.05) translateY(-5px); opacity: 1; }
+    100% { transform: scale(1) translateY(0); opacity: 1; }
+  }
+  @keyframes trophy-bounce {
+    0%, 100% { transform: translateY(0) rotate(-5deg); }
+    50%       { transform: translateY(-10px) rotate(5deg); }
+  }
+  @keyframes confetti-drift {
+    0%   { transform: translateY(-10px) rotate(0deg);   opacity: 1; }
+    100% { transform: translateY(110px) rotate(720deg); opacity: 0; }
+  }
+  .bounty-winner-card {
+    animation: winner-entrance 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  }
+  .bounty-trophy {
+    display: inline-block;
+    animation: trophy-bounce 1.3s ease-in-out infinite;
+  }
 `
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -1001,6 +1021,271 @@ function CompletedCard({ bounty, winner }: { bounty: Bounty; winner: Installer |
   )
 }
 
+// ── win test overlay ──────────────────────────────────────────────────────────
+
+function WinTestOverlay({
+  installer, bountyTitle, reward, onClose,
+}: {
+  installer: Installer
+  bountyTitle: string
+  reward: string
+  onClose: () => void
+}) {
+  const DOTS = [B.yellow, B.orange, B.green, '#FF6B6B', '#7B68EE', B.yellow, B.orange, '#4ECDC4']
+  return (
+    <div
+      style={{
+        position: 'fixed', inset: 0, zIndex: 9999,
+        background: 'rgba(0,0,0,0.92)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 20,
+      }}
+      onClick={onClose}
+    >
+      <div
+        className="bounty-winner-card"
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: 'linear-gradient(145deg, #1C1C1E 0%, #28271F 100%)',
+          border: `2px solid ${B.yellow}55`,
+          borderRadius: 24, padding: '44px 32px 36px',
+          maxWidth: 360, width: '100%', textAlign: 'center',
+          boxShadow: `0 0 80px ${B.yellow}18, 0 40px 80px rgba(0,0,0,0.85)`,
+          position: 'relative', overflow: 'hidden',
+        }}
+      >
+        {DOTS.map((clr, i) => (
+          <div key={i} style={{
+            position: 'absolute', width: 7, height: 7, borderRadius: '50%',
+            background: clr, pointerEvents: 'none',
+            top: `${8 + (i % 4) * 22}%`,
+            left: `${4 + i * 12}%`,
+            animation: `confetti-drift ${1.4 + i * 0.18}s ease-in ${i * 0.12}s infinite`,
+          }} />
+        ))}
+
+        <div className="bounty-trophy" style={{ fontSize: 54, marginBottom: 14, lineHeight: 1 }}>🏆</div>
+        <div style={{ fontSize: 9, fontWeight: 900, color: B.yellow, letterSpacing: '0.22em', textTransform: 'uppercase', marginBottom: 18 }}>
+          Bounty Won
+        </div>
+
+        <div
+          className="bounty-glow-pulse"
+          style={{
+            '--glow-color': `${installer.color}66`,
+            width: 72, height: 72, borderRadius: '50%',
+            background: installer.color,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 28, fontWeight: 800, color: B.bg,
+            margin: '0 auto 14px',
+            boxShadow: `0 0 44px ${installer.color}55`,
+          } as React.CSSProperties}
+        >
+          {installer.name.charAt(0)}
+        </div>
+
+        <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.02em', marginBottom: 4 }}>
+          {installer.name.split(' ')[0]}
+        </div>
+        <div style={{ fontSize: 13, color: B.textTer, marginBottom: 22 }}>{bountyTitle}</div>
+
+        <div style={{
+          background: `linear-gradient(90deg, ${B.yellow}22, ${B.yellow}10)`,
+          border: `1.5px solid ${B.yellow}44`,
+          borderRadius: 14, padding: '14px 20px', marginBottom: 28,
+        }}>
+          <div style={{ fontSize: 9, color: B.yellow, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 5 }}>Prize</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: B.yellow }}>{reward}</div>
+        </div>
+
+        <button
+          onClick={onClose}
+          style={{
+            background: B.surface2, color: B.textSec,
+            border: `1px solid ${B.border}`, borderRadius: 12,
+            padding: '11px 24px', fontSize: 13, fontWeight: 600,
+            cursor: 'pointer', width: '100%',
+          }}
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── redemption card ───────────────────────────────────────────────────────────
+
+function RedemptionCard() {
+  const [open, setOpen] = useState(false)
+  const steps = [
+    { n: '1', text: 'Hit all conditions before the deadline — progress updates in real time.' },
+    { n: '2', text: 'Your name appears as winner on the board automatically.' },
+    { n: '3', text: 'Admin awards the win and reaches out to arrange your prize.' },
+    { n: '4', text: 'Prize paid out same week. No extra steps needed.' },
+  ]
+  return (
+    <div style={{ background: B.surface, border: `1px solid ${B.border}`, borderRadius: 16, marginBottom: 20, overflow: 'hidden' }}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '14px 18px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 15 }}>📋</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: B.text }}>How to Redeem</span>
+        </div>
+        <span style={{
+          fontSize: 10, color: B.textTer, fontWeight: 600,
+          transform: open ? 'rotate(180deg)' : 'none',
+          transition: 'transform 0.2s', display: 'inline-block',
+        }}>▾</span>
+      </button>
+      {open && (
+        <div style={{ padding: '0 18px 18px', borderTop: `1px solid ${B.border}` }}>
+          {steps.map(s => (
+            <div key={s.n} style={{ display: 'flex', gap: 12, paddingTop: 14, alignItems: 'flex-start' }}>
+              <div style={{
+                width: 22, height: 22, borderRadius: '50%',
+                background: B.yellow, color: B.bg,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 11, fontWeight: 800, flexShrink: 0, marginTop: 1,
+              }}>
+                {s.n}
+              </div>
+              <div style={{ fontSize: 13, color: B.textSec, lineHeight: 1.6, paddingTop: 1 }}>{s.text}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── demo data ─────────────────────────────────────────────────────────────────
+
+function generateDemoBounties(installers: Installer[]): Array<{
+  bounty: Bounty & { conditions: BountyCondition[] }
+  board: InstProg[]
+  facts: string[]
+}> {
+  if (!installers.length) return []
+  const [a, b, c] = installers
+
+  const d = (n: number) => {
+    const dt = new Date()
+    dt.setDate(dt.getDate() + n)
+    return dt.toISOString().slice(0, 10)
+  }
+
+  function mkCond(bountyId: string, idx: number, type: ConditionType, value: number): BountyCondition {
+    return { id: `dc-${bountyId}-${idx}`, bounty_id: bountyId, condition_type: type, operator: '>=', value, created_at: '' }
+  }
+
+  function mkBoard(rows: Array<[Installer | undefined, CondProg[]]>): InstProg[] {
+    return rows
+      .filter((r): r is [Installer, CondProg[]] => r[0] != null)
+      .map(([inst, conds]) => ({
+        installer: inst, conds,
+        overallPct: conds.length > 0 ? Math.min(...conds.map(c => c.pct)) : 0,
+        allDone: conds.length > 0 && conds.every(c => c.done),
+      }))
+  }
+
+  // 1. Speed Demon — best sqft/hr in one day
+  const db1: Bounty & { conditions: BountyCondition[] } = {
+    id: 'demo-1', title: 'Speed Demon', reward: '$50 cash',
+    start_date: d(-14), end_date: d(5), active: true,
+    winner_installer_id: null, created_at: '',
+    conditions: [mkCond('demo-1', 1, 'best_sqft_hr_day', 40)],
+  }
+  const bb1 = mkBoard([
+    [a, [{ value: 34.8, pct: 0.87, done: false }]],
+    [b, [{ value: 24.8, pct: 0.62, done: false }]],
+    [c, [{ value: 16.4, pct: 0.41, done: false }]],
+  ])
+
+  // 2. Volume King — sqft total
+  const db2: Bounty & { conditions: BountyCondition[] } = {
+    id: 'demo-2', title: 'Volume King', reward: '$100 cash + Friday off',
+    start_date: d(-10), end_date: d(12), active: true,
+    winner_installer_id: null, created_at: '',
+    conditions: [mkCond('demo-2', 1, 'sqft_total', 800)],
+  }
+  const bb2 = mkBoard([
+    [a, [{ value: 520, pct: 0.65, done: false }]],
+    [b, [{ value: 384, pct: 0.48, done: false }]],
+    [c, [{ value: 248, pct: 0.31, done: false }]],
+  ])
+
+  // 3. Early Bird Parlay — early clock-in + days worked
+  const db3: Bounty & { conditions: BountyCondition[] } = {
+    id: 'demo-3', title: 'Early Bird Parlay', reward: '$75 gift card',
+    start_date: d(-7), end_date: null, active: true,
+    winner_installer_id: null, created_at: '',
+    conditions: [mkCond('demo-3', 1, 'early_clock_in', 450), mkCond('demo-3', 2, 'work_days', 5)],
+  }
+  const bb3 = mkBoard([
+    [a, [{ value: 1, pct: 1.0, done: true  }, { value: 3, pct: 0.60, done: false }]],
+    [b, [{ value: 0, pct: 0.0, done: false }, { value: 2, pct: 0.40, done: false }]],
+    [c, [{ value: 1, pct: 1.0, done: true  }, { value: 1, pct: 0.20, done: false }]],
+  ])
+
+  // 4. Panel Machine — panels in one day (urgent: 2 days left)
+  const db4: Bounty & { conditions: BountyCondition[] } = {
+    id: 'demo-4', title: 'Panel Machine', reward: '$60 cash',
+    start_date: d(-20), end_date: d(2), active: true,
+    winner_installer_id: null, created_at: '',
+    conditions: [mkCond('demo-4', 1, 'panels_single_day', 5)],
+  }
+  const bb4 = mkBoard([
+    [a, [{ value: 4, pct: 0.80, done: false }]],
+    [b, [{ value: 3, pct: 0.60, done: false }]],
+    [c, [{ value: 2, pct: 0.40, done: false }]],
+  ])
+
+  // 5. The Big Month — completed with winner
+  const db5: Bounty & { conditions: BountyCondition[] } = {
+    id: 'demo-5', title: 'The Big Month', reward: '$200 cash',
+    start_date: d(-35), end_date: d(-5), active: false,
+    winner_installer_id: a.id, created_at: '',
+    conditions: [mkCond('demo-5', 1, 'sqft_total', 1200)],
+  }
+  const bb5 = mkBoard([
+    [a, [{ value: 1248, pct: 1.04, done: true }]],
+    [b, [{ value: 744,  pct: 0.62, done: false }]],
+    [c, [{ value: 456,  pct: 0.38, done: false }]],
+  ])
+
+  // 6. Hustle Parlay — sqft volume + efficiency
+  const db6: Bounty & { conditions: BountyCondition[] } = {
+    id: 'demo-6', title: 'Hustle Parlay', reward: '$150 cash + Monday off',
+    start_date: d(-5), end_date: d(21), active: true,
+    winner_installer_id: null, created_at: '',
+    conditions: [mkCond('demo-6', 1, 'sqft_total', 600), mkCond('demo-6', 2, 'sqft_per_hr', 25)],
+  }
+  const bb6 = mkBoard([
+    [a, [{ value: 420, pct: 0.70, done: false }, { value: 22.1, pct: 0.88, done: false }]],
+    [b, [{ value: 300, pct: 0.50, done: false }, { value: 18.5, pct: 0.74, done: false }]],
+    [c, [{ value: 180, pct: 0.30, done: false }, { value: 12.3, pct: 0.49, done: false }]],
+  ])
+
+  const all = [
+    { bounty: db1, board: bb1 },
+    { bounty: db2, board: bb2 },
+    { bounty: db3, board: bb3 },
+    { bounty: db4, board: bb4 },
+    { bounty: db5, board: bb5 },
+    { bounty: db6, board: bb6 },
+  ]
+  return all.map(e => ({
+    ...e,
+    facts: e.bounty.active ? genFunFacts(e.bounty, e.board, []) : [],
+  }))
+}
+
 // ── form config ───────────────────────────────────────────────────────────────
 
 interface CondRow { id: number; type: ConditionType; valueStr: string }
@@ -1053,8 +1338,12 @@ export default function Bounties() {
     return { id: ++condIdRef.current, type, valueStr: '' }
   }
 
-  const [showCreate, setShowCreate] = useState(false)
-  const [toast,      setToast]      = useState('')
+  const [showCreate,  setShowCreate]  = useState(false)
+  const [testWinOpen, setTestWinOpen] = useState(false)
+  const [showDemo,    setShowDemo]    = useState(true)
+  const [toast,       setToast]       = useState('')
+
+  const demoBounties = useMemo(() => generateDemoBounties(installers), [installers])
   const [warn,       setWarn]       = useState<WarnConfig | null>(null)
   const [saving,     setSaving]     = useState(false)
 
@@ -1159,6 +1448,15 @@ export default function Bounties() {
       <WarnModal modal={warn} onClose={() => setWarn(null)} />
       {toast && <Toast msg={toast} onDone={() => setToast('')} />}
 
+      {testWinOpen && installers.length > 0 && (
+        <WinTestOverlay
+          installer={installers[0]}
+          bountyTitle={activeBounties[0]?.title ?? 'Speed Demon'}
+          reward={activeBounties[0]?.reward ?? '$100 cash'}
+          onClose={() => setTestWinOpen(false)}
+        />
+      )}
+
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
@@ -1167,17 +1465,31 @@ export default function Bounties() {
           </div>
           <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.03em' }}>Bounties</div>
         </div>
-        <button
-          onClick={() => setShowCreate(v => !v)}
-          style={{
-            background: showCreate ? B.surface2 : B.yellow,
-            color: showCreate ? B.textSec : B.bg,
-            border: 'none', borderRadius: 12,
-            padding: '10px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer',
-          }}
-        >
-          {showCreate ? 'Cancel' : '+ New Bounty'}
-        </button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {installers.length > 0 && (
+            <button
+              onClick={() => setTestWinOpen(true)}
+              style={{
+                background: 'none', color: B.textTer,
+                border: `1px solid ${B.border}`, borderRadius: 12,
+                padding: '10px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              }}
+            >
+              Test Win
+            </button>
+          )}
+          <button
+            onClick={() => setShowCreate(v => !v)}
+            style={{
+              background: showCreate ? B.surface2 : B.yellow,
+              color: showCreate ? B.textSec : B.bg,
+              border: 'none', borderRadius: 12,
+              padding: '10px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+            }}
+          >
+            {showCreate ? 'Cancel' : '+ New Bounty'}
+          </button>
+        </div>
       </div>
 
       {/* Create form */}
@@ -1371,6 +1683,84 @@ export default function Bounties() {
               : null
             return <CompletedCard key={b.id} bounty={b} winner={w} />
           })}
+        </>
+      )}
+
+      {/* Redemption instructions */}
+      <RedemptionCard />
+
+      {/* Demo previews */}
+      {demoBounties.length > 0 && (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, marginBottom: 12 }}>
+            <div style={{ fontSize: 9, fontWeight: 800, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.12em' }}>
+              ⚗ Demo Previews
+            </div>
+            <div style={{ flex: 1, height: 1, background: B.border }} />
+            <button
+              onClick={() => setShowDemo(v => !v)}
+              style={{ fontSize: 10, color: B.textTer, background: 'none', border: `1px solid ${B.border}`, borderRadius: 6, padding: '2px 8px', cursor: 'pointer', fontWeight: 600 }}
+            >
+              {showDemo ? 'Hide' : 'Show'}
+            </button>
+          </div>
+
+          {showDemo && (
+            <>
+              <div style={{
+                background: `${B.orange}0A`, border: `1px dashed ${B.orange}28`,
+                borderRadius: 10, padding: '9px 14px', marginBottom: 16,
+                fontSize: 11, color: B.textTer, lineHeight: 1.6,
+              }}>
+                Example bounties showing UI previews — not connected to real data.
+              </div>
+
+              {/* Featured demo (Speed Demon) */}
+              <FeaturedBountyCard
+                bounty={demoBounties[0].bounty}
+                board={demoBounties[0].board}
+                facts={demoBounties[0].facts}
+                isAdmin={false}
+                onAward={() => {}}
+                onToggle={() => {}}
+                onDelete={() => {}}
+              />
+
+              {/* Active demos */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Active</div>
+                <div style={{ flex: 1, height: 1, background: B.border }} />
+              </div>
+              {demoBounties.slice(1).filter(e => e.bounty.active).map(e => (
+                <ActiveBountyCard
+                  key={e.bounty.id}
+                  bounty={e.bounty}
+                  board={e.board}
+                  facts={e.facts}
+                  isAdmin={false}
+                  onAward={() => {}}
+                  onToggle={() => {}}
+                  onDelete={() => {}}
+                />
+              ))}
+
+              {/* Completed demo */}
+              {demoBounties.some(e => !e.bounty.active) && (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, marginTop: 8 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Hall of Fame</div>
+                    <div style={{ flex: 1, height: 1, background: B.border }} />
+                  </div>
+                  {demoBounties.filter(e => !e.bounty.active).map(e => {
+                    const w = e.bounty.winner_installer_id
+                      ? installers.find(i => i.id === e.bounty.winner_installer_id) ?? null
+                      : null
+                    return <CompletedCard key={e.bounty.id} bounty={e.bounty} winner={w} />
+                  })}
+                </>
+              )}
+            </>
+          )}
         </>
       )}
     </div>

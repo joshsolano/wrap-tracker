@@ -15,6 +15,7 @@ import Panels from './components/tabs/Panels'
 import Settings from './components/tabs/Settings'
 import { Redacted } from './components/ui/Redacted'
 import { B, isBirthday } from './lib/utils'
+import { useDemoFeatures } from './hooks/useDemoFeatures'
 
 const ALL_TABS = ['Clock In', 'Dashboard', 'Log', 'Projects', 'Leaderboard', 'Bounties', 'Profiles', 'Panels', 'Settings'] as const
 type Tab = typeof ALL_TABS[number]
@@ -43,10 +44,12 @@ function AppShell() {
     }, 120)
   }
 
+  const { demoEnabled } = useDemoFeatures()
+
   const birthday = installers.find(i => isBirthday(i.birthday))
   const activeCount = activeJobs.length
 
-  const tabs: Tab[] = isAdmin
+  const tabs: Tab[] = isAdmin && demoEnabled
     ? [...ALL_TABS]
     : ALL_TABS.filter(t => t !== 'Bounties')
 

@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 import { WarnModal } from '../ui/WarnModal'
 import { Toast } from '../ui/Toast'
 import { B, CC, SWATCH_COLORS } from '../../lib/utils'
+import { useDemoFeatures } from '../../hooks/useDemoFeatures'
 import type { WarnConfig, Installer } from '../../lib/types'
 
 interface Props { onSignOut: () => void }
@@ -12,6 +13,7 @@ export default function Settings({ onSignOut }: Props) {
   const { installers, logs, activeJobs, updateInstaller, deactivateInstaller, addInstallerViaEdge } = useAppData()
   const { isAdmin, installer: me, isGuest } = useAuth()
 
+  const { demoEnabled, toggleDemo } = useDemoFeatures()
   const [warn, setWarn] = useState<WarnConfig | null>(null)
   const [toast, setToast] = useState('')
 
@@ -324,6 +326,25 @@ export default function Settings({ onSignOut }: Props) {
           Project type changes reclassify all existing log entries.
         </div>
       </div>
+
+      {isAdmin && (
+        <div style={{ background:B.surface,borderRadius:16,padding:16,border:`1px solid ${B.border}`,marginBottom:16 }}>
+          <div style={{ fontSize:13,fontWeight:700,marginBottom:4 }}>Demo Features</div>
+          <div style={{ fontSize:12,color:B.textTer,marginBottom:14 }}>Experimental tabs visible to admins only while in preview.</div>
+          <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 14px',background:B.surface2,borderRadius:10 }}>
+            <div>
+              <div style={{ fontSize:13,fontWeight:600,color:demoEnabled?B.text:B.textTer }}>Bounties tab</div>
+              <div style={{ fontSize:11,color:B.textTer,marginTop:2 }}>Performance challenges &amp; prizes</div>
+            </div>
+            <button
+              onClick={toggleDemo}
+              style={{ width:38,height:22,borderRadius:11,border:'none',background:demoEnabled?B.green:B.surface3,position:'relative',transition:'background 0.2s',flexShrink:0,cursor:'pointer' }}
+            >
+              <span style={{ position:'absolute',top:3,left:demoEnabled?18:3,width:16,height:16,borderRadius:'50%',background:B.text,transition:'left 0.2s',display:'block' }} />
+            </button>
+          </div>
+        </div>
+      )}
 
       <button onClick={() => setWarn({ title:'Sign out?', body:'You will be returned to the login screen.', ok:'Sign out', cancel:'Cancel', onOk:onSignOut })}
         style={{ width:'100%',background:'transparent',color:B.red,border:`1px solid ${B.red}44`,borderRadius:14,padding:14,fontSize:14,fontWeight:600,cursor:'pointer' }}>
