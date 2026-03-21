@@ -397,6 +397,7 @@ interface InstProg {
   conds: CondProg[]
   overallPct: number
   allDone: boolean
+  latestTs: string | null  // most recent relevant log — used for tie-breaking
 }
 
 function groupByDay(logs: Log[], commercial: boolean): Map<string, Log[]> {
@@ -567,18 +568,31 @@ function calcInstProg(
 
 function calcLeaderboard(bounty: Bounty, installers: Installer[], logs: Log[], projects?: import('../../lib/types').Project[]): InstProg[] {
   const conditions = bounty.conditions ?? []
+  const start = new Date(bounty.start_date + 'T00:00:00')
+  const end   = bounty.end_date ? new Date(bounty.end_date + 'T23:59:59') : new Date()
   return installers
     .map(inst => {
       const conds      = conditions.length > 0 ? calcInstProg(inst.id, conditions, logs, bounty, projects) : []
       const overallPct = conds.length > 0 ? Math.min(...conds.map(c => c.pct)) : 0
       const allDone    = conds.length > 0 && conds.every(c => c.done)
-      return { installer: inst, conds, overallPct, allDone }
+      const inRange    = logs.filter(r =>
+        r.installer_id === inst.id && r.status === 'Complete' &&
+        r.start_ts && new Date(r.start_ts) >= start && new Date(r.start_ts) <= end
+      )
+      const latestTs = inRange.reduce<string | null>((latest, r) => {
+        const ts = r.finish_ts ?? r.start_ts
+        return !latest || ts > latest ? ts : latest
+      }, null)
+      return { installer: inst, conds, overallPct, allDone, latestTs }
     })
     .filter(ip => ip.conds.some(c => c.value > 0) || ip.allDone)
     .sort((a, b) => {
       if (a.allDone && !b.allDone) return -1
       if (!a.allDone && b.allDone) return 1
-      return b.overallPct - a.overallPct
+      if (b.overallPct !== a.overallPct) return b.overallPct - a.overallPct
+      // Tie-break: whoever got there first wins (earlier latest log = they crossed the line sooner)
+      if (a.latestTs && b.latestTs) return a.latestTs < b.latestTs ? -1 : 1
+      return 0
     })
 }
 
@@ -2103,6 +2117,7 @@ function generateDemoBounties(installers: Installer[]): Array<{
         installer: inst, conds,
         overallPct: conds.length > 0 ? Math.min(...conds.map(c => c.pct)) : 0,
         allDone: conds.length > 0 && conds.every(c => c.done),
+        latestTs: null,
       }))
   }
 
@@ -2432,6 +2447,20 @@ export default function Bounties() {
     })
   }
 
+  function condValidationError(type: ConditionType, valueStr: string, durationDays: number | null): string | null {
+    const v = type === 'early_clock_in' ? 1 : parseFloat(valueStr)
+    if (!valueStr && type !== 'social_action') return null // blank handled separately
+    if (type === 'social_action') return null
+    if (isNaN(v) || v <= 0) return 'Value must be greater than 0'
+    if (durationDays !== null) {
+      if (type === 'work_days' && v > durationDays)
+        return `Window is only ${durationDays} day${durationDays !== 1 ? 's' : ''} — can't work ${v} days`
+      if (type === 'first_clock_in' && v > durationDays)
+        return `Window is only ${durationDays} day${durationDays !== 1 ? 's' : ''} — can't be first in ${v} times`
+    }
+    return null
+  }
+
   async function handleCreate() {
     if (!fTitle.trim() || !fReward.trim() || !fStart) {
       setToast('Title, reward, and start date are required'); return
@@ -2439,6 +2468,11 @@ export default function Bounties() {
     if (fConds.some(c => c.type !== 'social_action' && !c.valueStr)) {
       setToast('All conditions need a value'); return
     }
+    const durDays = fEnd
+      ? Math.round((new Date(fEnd).getTime() - new Date(fStart + 'T00:00:00').getTime()) / 86400000)
+      : null
+    const condErrors = fConds.map(c => condValidationError(c.type, c.valueStr, durDays)).filter(Boolean)
+    if (condErrors.length) { setToast(condErrors[0]!); return }
     setSaving(true)
     const { error } = await createBounty({
       title:     fTitle.trim(),
@@ -2791,9 +2825,21 @@ export default function Bounties() {
                         >×</button>
                       )}
                     </div>
-                    {cfg && c.type !== 'social_action' && (
-                      <div style={{ fontSize: 10, color: B.textTer, marginTop: 3, marginLeft: 2 }}>{cfg.help}</div>
-                    )}
+                    {(() => {
+                      const durDays = fEnd
+                        ? Math.round((new Date(fEnd).getTime() - new Date(fStart + 'T00:00:00').getTime()) / 86400000)
+                        : null
+                      const err = c.valueStr ? condValidationError(c.type, c.valueStr, durDays) : null
+                      if (err) return (
+                        <div style={{ fontSize: 11, color: B.red, marginTop: 4, marginLeft: 2, fontWeight: 600 }}>
+                          ⚠ {err}
+                        </div>
+                      )
+                      if (cfg && c.type !== 'social_action') return (
+                        <div style={{ fontSize: 10, color: B.textTer, marginTop: 3, marginLeft: 2 }}>{cfg.help}</div>
+                      )
+                      return null
+                    })()}
                   </div>
                 )
               })}
