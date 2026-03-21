@@ -2183,22 +2183,23 @@ interface CondRow { id: number; type: ConditionType; valueStr: string; socialAct
 
 interface StarterTemplate {
   title: string
+  hint: string
   reward: string
   daysEnd: number | null
   conditions: { type: ConditionType; valueStr: string; socialActionType?: string }[]
 }
 
 const STARTER_TEMPLATES: StarterTemplate[] = [
-  { title: 'First to 4,500 sqft', reward: '$150 cash', daysEnd: 30, conditions: [{ type: 'sqft_total', valueStr: '4500' }] },
-  { title: '50 Panels', reward: '$125 cash', daysEnd: 30, conditions: [{ type: 'panels', valueStr: '50' }] },
-  { title: 'Early Bird Sprint', reward: '$75 gift card', daysEnd: 14, conditions: [{ type: 'early_clock_in', valueStr: '07:30' }] },
-  { title: 'Speed + Volume Parlay', reward: '$200 cash', daysEnd: 21, conditions: [{ type: 'sqft_total', valueStr: '600' }, { type: 'sqft_per_hr', valueStr: '25' }] },
-  { title: 'Project Grinder', reward: '$100 cash', daysEnd: 30, conditions: [{ type: 'work_days', valueStr: '20' }] },
-  { title: 'First Mover Parlay', reward: '$100 cash + Monday off', daysEnd: 21, conditions: [{ type: 'first_clock_in', valueStr: '5' }, { type: 'sqft_total', valueStr: '500' }] },
-  { title: 'Speed Demon', reward: '$50 cash', daysEnd: 14, conditions: [{ type: 'best_sqft_hr_day', valueStr: '40' }] },
-  { title: 'Big Month', reward: '$200 cash + Friday off', daysEnd: 30, conditions: [{ type: 'sqft_total', valueStr: '1000' }] },
-  { title: 'Buy Lunch Parlay', reward: '$75 cash', daysEnd: 21, conditions: [{ type: 'panels', valueStr: '30' }, { type: 'social_action', valueStr: '1', socialActionType: 'buy_lunch' }] },
-  { title: 'CC Crusher', reward: '$100 cash', daysEnd: 21, conditions: [{ type: 'sqft_cc', valueStr: '800' }] },
+  { title: 'First to 4,500 sqft', hint: '4,500 sqft commercial', reward: '$150 cash', daysEnd: 30, conditions: [{ type: 'sqft_total', valueStr: '4500' }] },
+  { title: '50 Panels', hint: '50 commercial panels', reward: '$125 cash', daysEnd: 30, conditions: [{ type: 'panels', valueStr: '50' }] },
+  { title: 'Early Bird Sprint', hint: 'Clock in before 7:30 AM', reward: '$75 gift card', daysEnd: 14, conditions: [{ type: 'early_clock_in', valueStr: '07:30' }] },
+  { title: 'Speed + Volume Parlay', hint: '600 sqft + 25 sqft/hr avg', reward: '$200 cash', daysEnd: 30, conditions: [{ type: 'sqft_total', valueStr: '600' }, { type: 'sqft_per_hr', valueStr: '25' }] },
+  { title: 'Project Grinder', hint: '20 days worked', reward: '$100 cash', daysEnd: 30, conditions: [{ type: 'work_days', valueStr: '20' }] },
+  { title: 'First Mover Parlay', hint: 'First in 5 days + 500 sqft', reward: '$100 cash + Monday off', daysEnd: 30, conditions: [{ type: 'first_clock_in', valueStr: '5' }, { type: 'sqft_total', valueStr: '500' }] },
+  { title: 'Speed Demon', hint: 'Best day: 40 sqft/hr', reward: '$50 cash', daysEnd: 14, conditions: [{ type: 'best_sqft_hr_day', valueStr: '40' }] },
+  { title: 'Big Month', hint: '1,000 sqft commercial', reward: '$200 cash + Friday off', daysEnd: 30, conditions: [{ type: 'sqft_total', valueStr: '1000' }] },
+  { title: 'Buy Lunch Parlay', hint: '30 panels + social commit', reward: '$75 cash', daysEnd: 30, conditions: [{ type: 'panels', valueStr: '30' }, { type: 'social_action', valueStr: '1', socialActionType: 'buy_lunch' }] },
+  { title: 'CC Crusher', hint: '800 sqft color change', reward: '$100 cash', daysEnd: 30, conditions: [{ type: 'sqft_cc', valueStr: '800' }] },
 ]
 
 const COND_GROUPS: { label: string; types: { type: ConditionType; label: string; placeholder: string; help: string }[] }[] = [
@@ -2266,11 +2267,12 @@ export default function Bounties() {
   const [warn,       setWarn]       = useState<WarnConfig | null>(null)
   const [saving,     setSaving]     = useState(false)
 
-  const [fTitle,  setFTitle]  = useState('')
-  const [fReward, setFReward] = useState('')
-  const [fStart,  setFStart]  = useState(new Date().toISOString().slice(0, 10))
-  const [fEnd,    setFEnd]    = useState('')
-  const [fConds,  setFConds]  = useState<CondRow[]>([newCondRow()])
+  const [fTitle,       setFTitle]       = useState('')
+  const [fReward,      setFReward]      = useState('')
+  const [fStart,       setFStart]       = useState(new Date().toISOString().slice(0, 10))
+  const [fEnd,         setFEnd]         = useState('')
+  const [fConds,       setFConds]       = useState<CondRow[]>([newCondRow()])
+  const [selectedTpl,  setSelectedTpl]  = useState<string | null>(null)
 
   const activeBounties    = useMemo(() => bounties.filter(b =>  b.active), [bounties])
   const completedBounties = useMemo(() => bounties.filter(b => !b.active), [bounties])
@@ -2410,7 +2412,7 @@ export default function Bounties() {
     setSaving(false)
     if (error) { setToast('Error: ' + error); return }
     setFTitle(''); setFReward(''); setFStart(new Date().toISOString().slice(0, 10))
-    setFEnd(''); setFConds([newCondRow()]); setShowCreate(false)
+    setFEnd(''); setFConds([newCondRow()]); setSelectedTpl(null); setShowCreate(false)
     setToast('Bounty created!')
   }
 
@@ -2478,7 +2480,7 @@ export default function Bounties() {
             </button>
           )}
           <button
-            onClick={() => setShowCreate(v => !v)}
+            onClick={() => { setShowCreate(v => !v); setSelectedTpl(null) }}
             style={{
               background: showCreate ? B.surface2 : B.yellow,
               color: showCreate ? B.textSec : B.bg,
@@ -2516,177 +2518,270 @@ export default function Bounties() {
       )}
 
       {/* Create form */}
-      {showCreate && (
-        <div style={{
-          background: B.surface, border: `1.5px solid ${B.yellow}28`,
-          borderRadius: 16, padding: 20, marginBottom: 24,
-        }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: B.yellow, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 12 }}>
-            New Bounty
-          </div>
+      {showCreate && (() => {
+        // Compute active duration from fEnd relative to fStart
+        function getActiveDur(): '7d' | '14d' | '30d' | 'none' | 'custom' {
+          if (!fEnd) return 'none'
+          const days = Math.round((new Date(fEnd).getTime() - new Date(fStart + 'T00:00:00').getTime()) / 86400000)
+          if (days === 7)  return '7d'
+          if (days === 14) return '14d'
+          if (days === 30) return '30d'
+          return 'custom'
+        }
+        function setDur(dur: '7d' | '14d' | '30d' | 'none') {
+          if (dur === 'none') { setFEnd(''); return }
+          const days = dur === '7d' ? 7 : dur === '14d' ? 14 : 30
+          const end = new Date(fStart + 'T00:00:00')
+          end.setDate(end.getDate() + days)
+          setFEnd(end.toISOString().slice(0, 10))
+        }
+        const activeDur = getActiveDur()
+        const durBtnStyle = (active: boolean): React.CSSProperties => ({
+          fontSize: 12, fontWeight: active ? 700 : 500,
+          color: active ? B.bg : B.textSec,
+          background: active ? B.yellow : B.surface2,
+          border: `1px solid ${active ? B.yellow : B.border}`,
+          borderRadius: 8, padding: '7px 12px', cursor: 'pointer', flexShrink: 0,
+        })
+        const rewardPresets = ['$50 cash', '$75 cash', '$100 cash', '$150 cash', '$200 cash']
 
-          {/* Template quick-pick */}
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 10, color: B.textTer, fontWeight: 600, marginBottom: 7 }}>Quick start from template</div>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {STARTER_TEMPLATES.map(tpl => (
-                <button
-                  key={tpl.title}
-                  onClick={() => {
-                    const today = new Date().toISOString().slice(0, 10)
-                    const endDate = tpl.daysEnd != null
-                      ? new Date(Date.now() + tpl.daysEnd * 86400000).toISOString().slice(0, 10)
-                      : ''
-                    setFTitle(tpl.title)
-                    setFReward(tpl.reward)
-                    setFStart(today)
-                    setFEnd(endDate)
-                    setFConds(tpl.conditions.map(c => ({
-                      id: ++condIdRef.current,
-                      type: c.type,
-                      valueStr: c.valueStr,
-                      socialActionType: c.socialActionType,
-                    })))
-                  }}
-                  style={{
-                    fontSize: 11, fontWeight: 600,
-                    color: B.textSec, background: B.surface2,
-                    border: `1px solid ${B.border}`, borderRadius: 8,
-                    padding: '5px 10px', cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {tpl.title}
-                </button>
-              ))}
+        return (
+          <div style={{
+            background: B.surface, border: `1.5px solid ${B.yellow}28`,
+            borderRadius: 16, padding: 20, marginBottom: 24,
+          }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: B.yellow, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 14 }}>
+              New Bounty
             </div>
-          </div>
 
-          <div style={{ marginBottom: 10 }}>
-            <div style={{ fontSize: 11, color: B.textTer, fontWeight: 600, marginBottom: 5 }}>Title</div>
-            <input placeholder="e.g. First to 500 sqft" value={fTitle} onChange={e => setFTitle(e.target.value)} style={inp} />
-          </div>
-
-          <div style={{ marginBottom: 10 }}>
-            <div style={{ fontSize: 11, color: B.textTer, fontWeight: 600, marginBottom: 5 }}>Reward</div>
-            <input placeholder="e.g. $100 cash, Friday off" value={fReward} onChange={e => setFReward(e.target.value)} style={inp} />
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
-            <div>
-              <div style={{ fontSize: 11, color: B.textTer, fontWeight: 600, marginBottom: 5 }}>Start Date</div>
-              <input type="date" value={fStart} onChange={e => setFStart(e.target.value)} style={{ ...inp, colorScheme: 'dark' }} />
-            </div>
-            <div>
-              <div style={{ fontSize: 11, color: B.textTer, fontWeight: 600, marginBottom: 5 }}>End Date (optional)</div>
-              <input type="date" value={fEnd} onChange={e => setFEnd(e.target.value)} style={{ ...inp, colorScheme: 'dark' }} />
-            </div>
-          </div>
-
-          {/* Condition builder */}
-          <div style={{ marginBottom: 14 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <div style={{ fontSize: 11, color: B.textTer, fontWeight: 600 }}>
-                Conditions
-                {fConds.length > 1 && (
-                  <span style={{ marginLeft: 8, color: B.purple, fontWeight: 700 }}>— Parlay ({fConds.length} conditions)</span>
-                )}
+            {/* ── Template cards ── */}
+            <div style={{ marginBottom: 18 }}>
+              <div style={{ fontSize: 10, color: B.textTer, fontWeight: 600, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                Start from template
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
+                {STARTER_TEMPLATES.map(tpl => {
+                  const isSelected = selectedTpl === tpl.title
+                  return (
+                    <button
+                      key={tpl.title}
+                      onClick={() => {
+                        const today = new Date().toISOString().slice(0, 10)
+                        const endDate = tpl.daysEnd != null
+                          ? new Date(Date.now() + tpl.daysEnd * 86400000).toISOString().slice(0, 10)
+                          : ''
+                        setFTitle(tpl.title)
+                        setFReward(tpl.reward)
+                        setFStart(today)
+                        setFEnd(endDate)
+                        setSelectedTpl(tpl.title)
+                        setFConds(tpl.conditions.map(c => ({
+                          id: ++condIdRef.current,
+                          type: c.type,
+                          valueStr: c.valueStr,
+                          socialActionType: c.socialActionType,
+                        })))
+                      }}
+                      style={{
+                        textAlign: 'left', cursor: 'pointer',
+                        background: isSelected ? `${B.yellow}12` : B.surface2,
+                        border: `1.5px solid ${isSelected ? B.yellow + '77' : B.border}`,
+                        borderRadius: 10, padding: '9px 11px',
+                      }}
+                    >
+                      <div style={{ fontSize: 12, fontWeight: 700, color: isSelected ? B.yellow : B.text, marginBottom: 3, lineHeight: 1.3 }}>
+                        {tpl.title}
+                      </div>
+                      <div style={{ fontSize: 10, color: B.textTer, marginBottom: 2 }}>{tpl.hint}</div>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: isSelected ? B.yellow : B.textSec }}>
+                        {tpl.reward}{tpl.daysEnd ? ` · ${tpl.daysEnd}d` : ''}
+                      </div>
+                    </button>
+                  )
+                })}
               </div>
             </div>
 
-            {fConds.map((c, idx) => {
-              const cfg = ALL_COND_CONFIG.find(x => x.type === c.type)
-              return (
-                <div key={c.id} style={{ marginBottom: 8 }}>
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
-                    <select
-                      value={c.type}
-                      onChange={e => setFConds(prev => prev.map((r, i) =>
-                        i === idx ? { ...r, type: e.target.value as ConditionType, valueStr: '' } : r
-                      ))}
-                      style={{ ...inp, width: 'auto', flex: 1, padding: '9px 10px', cursor: 'pointer' }}
-                    >
-                      {COND_GROUPS.map(g => (
-                        <optgroup key={g.label} label={`— ${g.label} —`}>
-                          {g.types.map(t => (
-                            <option key={t.type} value={t.type}>{t.label}</option>
-                          ))}
-                        </optgroup>
-                      ))}
-                    </select>
+            {/* ── Title ── */}
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 11, color: B.textTer, fontWeight: 600, marginBottom: 5 }}>Title</div>
+              <input
+                placeholder="e.g. First to 500 sqft"
+                value={fTitle}
+                onChange={e => { setFTitle(e.target.value); setSelectedTpl(null) }}
+                style={inp}
+              />
+            </div>
 
-                    {c.type === 'social_action' ? (
+            {/* ── Reward ── */}
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, color: B.textTer, fontWeight: 600, marginBottom: 7 }}>Reward</div>
+              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 7 }}>
+                {rewardPresets.map(p => (
+                  <button
+                    key={p}
+                    onClick={() => setFReward(p)}
+                    style={{
+                      fontSize: 12, fontWeight: fReward === p ? 700 : 500,
+                      color: fReward === p ? B.bg : B.textSec,
+                      background: fReward === p ? B.yellow : B.surface2,
+                      border: `1px solid ${fReward === p ? B.yellow : B.border}`,
+                      borderRadius: 8, padding: '6px 10px', cursor: 'pointer',
+                    }}
+                  >
+                    {p.replace(' cash', '')}
+                  </button>
+                ))}
+              </div>
+              <input
+                placeholder="e.g. $100 cash, Friday off"
+                value={fReward}
+                onChange={e => setFReward(e.target.value)}
+                style={inp}
+              />
+            </div>
+
+            {/* ── Duration shortcuts ── */}
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, color: B.textTer, fontWeight: 600, marginBottom: 7 }}>Duration</div>
+              <div style={{ display: 'flex', gap: 5, marginBottom: activeDur === 'custom' ? 8 : 0, flexWrap: 'wrap' }}>
+                {(['7d', '14d', '30d'] as const).map(d => (
+                  <button key={d} onClick={() => setDur(d)} style={durBtnStyle(activeDur === d)}>
+                    {d === '7d' ? '1 wk' : d === '14d' ? '2 wks' : '1 mo'}
+                  </button>
+                ))}
+                <button onClick={() => setDur('none')} style={durBtnStyle(activeDur === 'none')}>No end</button>
+                <button
+                  onClick={() => { if (activeDur !== 'custom') setFEnd('') }}
+                  style={durBtnStyle(activeDur === 'custom')}
+                >
+                  Custom
+                </button>
+              </div>
+              {activeDur === 'custom' && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div>
+                    <div style={{ fontSize: 10, color: B.textTer, marginBottom: 4 }}>Start</div>
+                    <input type="date" value={fStart} onChange={e => setFStart(e.target.value)} style={{ ...inp, colorScheme: 'dark' }} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, color: B.textTer, marginBottom: 4 }}>End</div>
+                    <input type="date" value={fEnd} onChange={e => setFEnd(e.target.value)} style={{ ...inp, colorScheme: 'dark' }} />
+                  </div>
+                </div>
+              )}
+              {activeDur !== 'custom' && (
+                <div style={{ fontSize: 10, color: B.textTer, marginTop: 5 }}>
+                  {fEnd
+                    ? `${fStart} → ${fEnd}`
+                    : `Starts ${fStart} · no end date`}
+                </div>
+              )}
+            </div>
+
+            {/* ── Condition builder ── */}
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, color: B.textTer, fontWeight: 600, marginBottom: 10 }}>
+                Conditions
+                {fConds.length > 1 && (
+                  <span style={{ marginLeft: 8, color: B.purple, fontWeight: 700 }}>⚡ Parlay — all must be met</span>
+                )}
+              </div>
+
+              {fConds.map((c, idx) => {
+                const cfg = ALL_COND_CONFIG.find(x => x.type === c.type)
+                return (
+                  <div key={c.id} style={{ marginBottom: 8 }}>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
                       <select
-                        value={c.socialActionType ?? 'buy_lunch'}
+                        value={c.type}
                         onChange={e => setFConds(prev => prev.map((r, i) =>
-                          i === idx ? { ...r, socialActionType: e.target.value, valueStr: '1' } : r
+                          i === idx ? { ...r, type: e.target.value as ConditionType, valueStr: '' } : r
                         ))}
-                        style={{ ...inp, width: 'auto', flex: 'none', padding: '9px 10px', cursor: 'pointer' }}
+                        style={{ ...inp, width: 'auto', flex: 1, padding: '9px 10px', cursor: 'pointer' }}
                       >
-                        <option value="buy_lunch">Buy lunch 🍔</option>
-                        <option value="buy_coffee">Buy coffee ☕</option>
+                        {COND_GROUPS.map(g => (
+                          <optgroup key={g.label} label={`— ${g.label} —`}>
+                            {g.types.map(t => (
+                              <option key={t.type} value={t.type}>{t.label}</option>
+                            ))}
+                          </optgroup>
+                        ))}
                       </select>
-                    ) : c.type === 'early_clock_in' ? (
-                      <input
-                        type="time"
-                        value={c.valueStr}
-                        onChange={e => setFConds(prev => prev.map((r, i) =>
-                          i === idx ? { ...r, valueStr: e.target.value } : r
-                        ))}
-                        style={{ ...inp, width: 110, flex: 'none', colorScheme: 'dark' }}
-                      />
-                    ) : (
-                      <input
-                        type="number"
-                        placeholder={cfg?.placeholder ?? '0'}
-                        value={c.valueStr}
-                        onChange={e => setFConds(prev => prev.map((r, i) =>
-                          i === idx ? { ...r, valueStr: e.target.value } : r
-                        ))}
-                        style={{ ...inp, width: 88, flex: 'none' }}
-                      />
-                    )}
 
-                    {fConds.length > 1 && (
-                      <button
-                        onClick={() => setFConds(prev => prev.filter((_, i) => i !== idx))}
-                        style={{ background: 'none', border: 'none', color: B.textTer, fontSize: 18, cursor: 'pointer', padding: '8px 4px', flexShrink: 0 }}
-                      >×</button>
+                      {c.type === 'social_action' ? (
+                        <select
+                          value={c.socialActionType ?? 'buy_lunch'}
+                          onChange={e => setFConds(prev => prev.map((r, i) =>
+                            i === idx ? { ...r, socialActionType: e.target.value, valueStr: '1' } : r
+                          ))}
+                          style={{ ...inp, width: 'auto', flex: 'none', padding: '9px 10px', cursor: 'pointer' }}
+                        >
+                          <option value="buy_lunch">Buy lunch 🍔</option>
+                          <option value="buy_coffee">Buy coffee ☕</option>
+                        </select>
+                      ) : c.type === 'early_clock_in' ? (
+                        <input
+                          type="time"
+                          value={c.valueStr}
+                          onChange={e => setFConds(prev => prev.map((r, i) =>
+                            i === idx ? { ...r, valueStr: e.target.value } : r
+                          ))}
+                          style={{ ...inp, width: 110, flex: 'none', colorScheme: 'dark' }}
+                        />
+                      ) : (
+                        <input
+                          type="number"
+                          placeholder={cfg?.placeholder ?? '0'}
+                          value={c.valueStr}
+                          onChange={e => setFConds(prev => prev.map((r, i) =>
+                            i === idx ? { ...r, valueStr: e.target.value } : r
+                          ))}
+                          style={{ ...inp, width: 88, flex: 'none' }}
+                        />
+                      )}
+
+                      {fConds.length > 1 && (
+                        <button
+                          onClick={() => setFConds(prev => prev.filter((_, i) => i !== idx))}
+                          style={{ background: 'none', border: 'none', color: B.textTer, fontSize: 18, cursor: 'pointer', padding: '8px 4px', flexShrink: 0 }}
+                        >×</button>
+                      )}
+                    </div>
+                    {cfg && c.type !== 'social_action' && (
+                      <div style={{ fontSize: 10, color: B.textTer, marginTop: 3, marginLeft: 2 }}>{cfg.help}</div>
                     )}
                   </div>
-                  {cfg && (
-                    <div style={{ fontSize: 10, color: B.textTer, marginTop: 3, marginLeft: 2 }}>{cfg.help}</div>
-                  )}
-                </div>
-              )
-            })}
+                )
+              })}
+
+              <button
+                onClick={() => setFConds(prev => [...prev, newCondRow()])}
+                style={{
+                  background: 'transparent', border: `1px dashed ${B.border}`,
+                  borderRadius: 8, padding: '7px 12px', fontSize: 12,
+                  color: B.textTer, cursor: 'pointer', marginTop: 4, width: '100%',
+                }}
+              >
+                + Add condition (makes it a Parlay)
+              </button>
+            </div>
 
             <button
-              onClick={() => setFConds(prev => [...prev, newCondRow()])}
+              onClick={handleCreate}
+              disabled={saving}
               style={{
-                background: 'transparent', border: `1px dashed ${B.border}`,
-                borderRadius: 8, padding: '7px 12px', fontSize: 12,
-                color: B.textTer, cursor: 'pointer', marginTop: 4, width: '100%',
+                width: '100%', background: B.yellow, color: B.bg,
+                border: 'none', borderRadius: 12, padding: 14,
+                fontSize: 15, fontWeight: 800,
+                cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1,
               }}
             >
-              + Add condition → turns into a Parlay
+              {saving ? 'Creating…' : 'Create Bounty'}
             </button>
           </div>
-
-          <button
-            onClick={handleCreate}
-            disabled={saving}
-            style={{
-              width: '100%', background: B.yellow, color: B.bg,
-              border: 'none', borderRadius: 12, padding: 14,
-              fontSize: 15, fontWeight: 800,
-              cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1,
-            }}
-          >
-            {saving ? 'Creating…' : 'Create Bounty'}
-          </button>
-        </div>
-      )}
+        )
+      })()}
 
       {/* Empty state */}
       {!activeBounties.length && !completedBounties.length && (
