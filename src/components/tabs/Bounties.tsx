@@ -2197,7 +2197,7 @@ const STARTER_TEMPLATES: StarterTemplate[] = [
   { title: 'First Mover Parlay', reward: '$100 cash + Monday off', daysEnd: 21, conditions: [{ type: 'first_clock_in', valueStr: '5' }, { type: 'sqft_total', valueStr: '500' }] },
   { title: 'Speed Demon', reward: '$50 cash', daysEnd: 14, conditions: [{ type: 'best_sqft_hr_day', valueStr: '40' }] },
   { title: 'Big Month', reward: '$200 cash + Friday off', daysEnd: 30, conditions: [{ type: 'sqft_total', valueStr: '1000' }] },
-  { title: 'Buy Lunch Parlay', reward: 'Winner buys + $50 back', daysEnd: 21, conditions: [{ type: 'panels', valueStr: '30' }, { type: 'social_action', valueStr: '1', socialActionType: 'buy_lunch' }] },
+  { title: 'Buy Lunch Parlay', reward: '$75 cash', daysEnd: 21, conditions: [{ type: 'panels', valueStr: '30' }, { type: 'social_action', valueStr: '1', socialActionType: 'buy_lunch' }] },
   { title: 'CC Crusher', reward: '$100 cash', daysEnd: 21, conditions: [{ type: 'sqft_cc', valueStr: '800' }] },
 ]
 
