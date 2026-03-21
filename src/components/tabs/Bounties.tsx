@@ -7,7 +7,45 @@ import { WarnModal } from '../ui/WarnModal'
 import { B, fmtDate } from '../../lib/utils'
 import type { Bounty, BountyCondition, ConditionType, Installer, Log, WarnConfig } from '../../lib/types'
 
-// ── helpers ──────────────────────────────────────────────────────────────────
+// ── CSS animations ────────────────────────────────────────────────────────────
+
+const BOUNTY_CSS = `
+  @keyframes progress-shimmer {
+    0% { left: -80%; }
+    100% { left: 180%; }
+  }
+  @keyframes glow-pulse {
+    0%, 100% { box-shadow: 0 0 10px var(--glow-color, rgba(245,196,0,0.3)); }
+    50% { box-shadow: 0 0 28px var(--glow-color, rgba(245,196,0,0.7)); }
+  }
+  @keyframes urgency-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
+  }
+  .bounty-shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+  .bounty-shimmer::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -80%;
+    width: 60%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent);
+    animation: progress-shimmer 2.2s ease-in-out infinite;
+    border-radius: inherit;
+  }
+  .bounty-glow-pulse {
+    animation: glow-pulse 2s ease-in-out infinite;
+  }
+  .bounty-urgency {
+    animation: urgency-pulse 1.4s ease-in-out infinite;
+  }
+`
+
+// ── helpers ───────────────────────────────────────────────────────────────────
 
 function minsToTime(m: number) {
   const h = Math.floor(m / 60) % 12 || 12
@@ -21,31 +59,69 @@ function parseMins(t: string): number {
   return h * 60 + (m || 0)
 }
 
-
 function condLabel(type: ConditionType, value: number): string {
   switch (type) {
-    case 'sqft_total': return `${value.toFixed(0)} sqft total`
-    case 'panels': return `${value} panels completed`
-    case 'sqft_per_hr': return `${value} sqft/hr average`
-    case 'early_clock_in': return `First in before ${minsToTime(value)}`
+    case 'sqft_total':       return `${value.toFixed(0)} commercial sqft`
+    case 'sqft_cc':          return `${value.toFixed(0)} CC sqft`
+    case 'panels':           return `${value} commercial panels`
+    case 'panels_cc':        return `${value} CC panels`
+    case 'sqft_per_hr':      return `${value} sqft/hr average`
+    case 'total_hours':      return `${value}h total time on clock`
+    case 'work_days':        return `${value} days worked`
+    case 'sqft_single_day':  return `${value} sqft in one day`
+    case 'panels_single_day':return `${value} panels in one day`
+    case 'best_sqft_hr_day': return `${value} sqft/hr in one day`
+    case 'early_clock_in':   return `Clock in before ${minsToTime(value)}`
   }
 }
 
-function condValueDisplay(type: ConditionType, value: number): string {
+function condValueStr(type: ConditionType, value: number): string {
   switch (type) {
-    case 'sqft_total': return value.toFixed(1) + ' sqft'
-    case 'panels': return value + ' panels'
-    case 'sqft_per_hr': return value.toFixed(1) + '/hr'
-    case 'early_clock_in': return value + (value === 1 ? ' early start' : ' early starts')
+    case 'sqft_total':
+    case 'sqft_cc':
+    case 'sqft_single_day':   return value.toFixed(1) + ' sqft'
+    case 'panels':
+    case 'panels_cc':
+    case 'panels_single_day': return value + ' panels'
+    case 'sqft_per_hr':
+    case 'best_sqft_hr_day':  return value.toFixed(1) + ' sqft/hr'
+    case 'total_hours':       return value.toFixed(1) + 'h'
+    case 'work_days':         return value + (value === 1 ? ' day' : ' days')
+    case 'early_clock_in':    return value + (value === 1 ? ' early start' : ' early starts')
   }
 }
 
-function condTargetDisplay(cond: BountyCondition): string {
-  switch (cond.condition_type as ConditionType) {
-    case 'sqft_total': return cond.value.toFixed(0)
-    case 'panels': return String(cond.value)
-    case 'sqft_per_hr': return cond.value.toFixed(1)
-    case 'early_clock_in': return '1 before ' + minsToTime(cond.value)
+function condTargetStr(cond: BountyCondition): string {
+  const t = cond.condition_type as ConditionType
+  switch (t) {
+    case 'sqft_total':
+    case 'sqft_cc':
+    case 'sqft_single_day':   return cond.value.toFixed(0)
+    case 'panels':
+    case 'panels_cc':
+    case 'panels_single_day': return String(cond.value)
+    case 'sqft_per_hr':
+    case 'best_sqft_hr_day':  return cond.value.toFixed(1)
+    case 'total_hours':       return cond.value.toFixed(1) + 'h'
+    case 'work_days':         return cond.value + ' days'
+    case 'early_clock_in':    return 'before ' + minsToTime(cond.value)
+  }
+}
+
+function condRemainingStr(type: ConditionType, remaining: number): string {
+  if (remaining <= 0) return ''
+  switch (type) {
+    case 'sqft_total':
+    case 'sqft_cc':
+    case 'sqft_single_day':   return `${remaining.toFixed(1)} sqft to go`
+    case 'panels':
+    case 'panels_cc':
+    case 'panels_single_day': return `${Math.ceil(remaining)} panel${Math.ceil(remaining) !== 1 ? 's' : ''} to go`
+    case 'sqft_per_hr':
+    case 'best_sqft_hr_day':  return `need +${remaining.toFixed(1)} sqft/hr`
+    case 'total_hours':       return `${remaining.toFixed(1)}h to go`
+    case 'work_days':         return `${Math.ceil(remaining)} day${Math.ceil(remaining) !== 1 ? 's' : ''} to go`
+    case 'early_clock_in':    return 'clock in early once'
   }
 }
 
@@ -72,6 +148,15 @@ function timeLeftColor(endDate: string | null): string {
   return B.green
 }
 
+function sqftContext(sqft: number): string {
+  if (sqft < 80)  return `${sqft.toFixed(0)} sqft — a solid small job`
+  if (sqft < 200) return `${sqft.toFixed(0)} sqft ≈ one compact car`
+  if (sqft < 400) return `${sqft.toFixed(0)} sqft ≈ one full sedan`
+  if (sqft < 700) return `${sqft.toFixed(0)} sqft ≈ one full SUV`
+  if (sqft < 1000) return `${sqft.toFixed(0)} sqft ≈ a van`
+  return `${sqft.toFixed(0)} sqft ≈ ${(sqft / 9).toFixed(0)} parking spaces`
+}
+
 // ── progress calculation ──────────────────────────────────────────────────────
 
 interface CondProg { value: number; pct: number; done: boolean }
@@ -82,6 +167,19 @@ interface InstProg {
   allDone: boolean
 }
 
+function groupByDay(logs: Log[], commercial: boolean): Map<string, Log[]> {
+  const m = new Map<string, Log[]>()
+  for (const r of logs) {
+    if (commercial && r.is_color_change) continue
+    if (!commercial && !r.is_color_change) continue
+    const key = new Date(r.start_ts).toDateString()
+    const arr = m.get(key) ?? []
+    arr.push(r)
+    m.set(key, arr)
+  }
+  return m
+}
+
 function calcInstProg(
   installerId: string,
   conditions: BountyCondition[],
@@ -89,7 +187,8 @@ function calcInstProg(
   bounty: Bounty
 ): CondProg[] {
   const start = new Date(bounty.start_date + 'T00:00:00')
-  const end = bounty.end_date ? new Date(bounty.end_date + 'T23:59:59') : new Date()
+  const end   = bounty.end_date ? new Date(bounty.end_date + 'T23:59:59') : new Date()
+
   const inRange = logs.filter(r =>
     r.installer_id === installerId &&
     r.status === 'Complete' &&
@@ -98,28 +197,87 @@ function calcInstProg(
     new Date(r.start_ts) <= end
   )
 
+  const commercial = inRange.filter(r => !r.is_color_change)
+  const cc         = inRange.filter(r =>  r.is_color_change)
+
   return conditions.map(cond => {
-    let value = 0
+    let value  = 0
     let target = cond.value
 
-    if (cond.condition_type === 'sqft_total') {
-      value = inRange.filter(r => !r.is_color_change).reduce((s, r) => s + (r.sqft ?? 0), 0)
-    } else if (cond.condition_type === 'panels') {
-      value = inRange.filter(r => !r.is_color_change).length
-    } else if (cond.condition_type === 'sqft_per_hr') {
-      const withRate = inRange.filter(r => !r.is_color_change && r.sqftHr != null)
-      value = withRate.length > 0
-        ? withRate.reduce((s, r) => s + (r.sqftHr ?? 0), 0) / withRate.length
-        : 0
-    } else if (cond.condition_type === 'early_clock_in') {
-      const cutoff = cond.value
-      const days = new Set<string>()
-      for (const r of inRange) {
-        const d = new Date(r.start_ts)
-        if (d.getHours() * 60 + d.getMinutes() < cutoff) days.add(d.toDateString())
+    switch (cond.condition_type) {
+      case 'sqft_total':
+        value = commercial.reduce((s, r) => s + (r.sqft ?? 0), 0)
+        break
+
+      case 'sqft_cc':
+        value = cc.reduce((s, r) => s + (r.sqft ?? 0), 0)
+        break
+
+      case 'panels':
+        value = commercial.length
+        break
+
+      case 'panels_cc':
+        value = cc.length
+        break
+
+      case 'sqft_per_hr': {
+        const withRate = commercial.filter(r => r.sqftHr != null)
+        value = withRate.length > 0
+          ? withRate.reduce((s, r) => s + (r.sqftHr ?? 0), 0) / withRate.length
+          : 0
+        break
       }
-      value = days.size
-      target = 1
+
+      case 'total_hours':
+        value = inRange.reduce((s, r) => s + (r.mins ?? 0), 0) / 60
+        break
+
+      case 'work_days': {
+        const days = new Set(inRange.map(r => new Date(r.start_ts).toDateString()))
+        value = days.size
+        break
+      }
+
+      case 'sqft_single_day': {
+        const byDay = groupByDay(inRange, true)
+        if (byDay.size > 0) {
+          value = Math.max(...Array.from(byDay.values()).map(arr =>
+            arr.reduce((s, r) => s + (r.sqft ?? 0), 0)
+          ))
+        }
+        break
+      }
+
+      case 'panels_single_day': {
+        const byDay = groupByDay(inRange, true)
+        if (byDay.size > 0) {
+          value = Math.max(...Array.from(byDay.values()).map(arr => arr.length))
+        }
+        break
+      }
+
+      case 'best_sqft_hr_day': {
+        const byDay = groupByDay(inRange, true)
+        for (const arr of byDay.values()) {
+          const totalSqft = arr.reduce((s, r) => s + (r.sqft ?? 0), 0)
+          const totalMins = arr.reduce((s, r) => s + (r.mins ?? 0), 0)
+          if (totalMins > 0) value = Math.max(value, totalSqft / (totalMins / 60))
+        }
+        break
+      }
+
+      case 'early_clock_in': {
+        const cutoff = cond.value
+        const days = new Set<string>()
+        for (const r of inRange) {
+          const d = new Date(r.start_ts)
+          if (d.getHours() * 60 + d.getMinutes() < cutoff) days.add(d.toDateString())
+        }
+        value  = days.size
+        target = 1
+        break
+      }
     }
 
     const pct = target > 0 ? Math.min(1, value / target) : 0
@@ -131,9 +289,9 @@ function calcLeaderboard(bounty: Bounty, installers: Installer[], logs: Log[]): 
   const conditions = bounty.conditions ?? []
   return installers
     .map(inst => {
-      const conds = conditions.length > 0 ? calcInstProg(inst.id, conditions, logs, bounty) : []
+      const conds      = conditions.length > 0 ? calcInstProg(inst.id, conditions, logs, bounty) : []
       const overallPct = conds.length > 0 ? Math.min(...conds.map(c => c.pct)) : 0
-      const allDone = conds.length > 0 && conds.every(c => c.done)
+      const allDone    = conds.length > 0 && conds.every(c => c.done)
       return { installer: inst, conds, overallPct, allDone }
     })
     .filter(ip => ip.conds.some(c => c.value > 0) || ip.allDone)
@@ -144,45 +302,120 @@ function calcLeaderboard(bounty: Bounty, installers: Installer[], logs: Log[]): 
     })
 }
 
-function genFunFacts(bounty: Bounty, board: InstProg[]): string[] {
+// ── fun facts ─────────────────────────────────────────────────────────────────
+
+function genFunFacts(bounty: Bounty, board: InstProg[], allLogs: Log[]): string[] {
   const facts: string[] = []
   if (!board.length) return facts
-  const conditions = bounty.conditions ?? []
-  const leader = board[0]
-  const second = board[1]
 
-  if (leader && second && conditions[0] && leader.conds[0] && second.conds[0]) {
-    const cond = conditions[0]
-    const gap = leader.conds[0].value - second.conds[0].value
+  const conditions  = bounty.conditions ?? []
+  const leader      = board[0]
+  const second      = board[1]
+  const isParlay    = conditions.length > 1
+  const dLeft       = daysLeftFromEnd(bounty.end_date)
+  const firstCond   = conditions[0]
+  const leaderCond0 = leader.conds[0]
+  const secondCond0 = second?.conds[0]
+
+  // ── gap (absolute terms) ──
+  if (firstCond && leaderCond0 && secondCond0) {
+    const gap  = leaderCond0.value - secondCond0.value
     const name = leader.installer.name.split(' ')[0]
+    const t    = firstCond.condition_type as ConditionType
     if (gap > 0) {
-      if (cond.condition_type === 'sqft_total')
-        facts.push(`${name} leads by ${gap.toFixed(1)} sqft`)
-      else if (cond.condition_type === 'panels')
-        facts.push(`${name} leads by ${Math.round(gap)} panel${Math.round(gap) !== 1 ? 's' : ''}`)
-      else if (cond.condition_type === 'sqft_per_hr')
-        facts.push(`${name} is ${gap.toFixed(1)} sqft/hr faster than 2nd`)
+      if (t === 'sqft_total' || t === 'sqft_cc' || t === 'sqft_single_day')
+        facts.push(`${name} leads by ${gap.toFixed(1)} sqft — still catchable`)
+      else if (t === 'panels' || t === 'panels_cc' || t === 'panels_single_day')
+        facts.push(`Only ${Math.round(gap)} panel${Math.round(gap) !== 1 ? 's' : ''} between 1st and 2nd`)
+      else if (t === 'sqft_per_hr' || t === 'best_sqft_hr_day')
+        facts.push(`${name} is ${gap.toFixed(1)} sqft/hr ahead — one fast session could flip this`)
+      else if (t === 'early_clock_in')
+        facts.push(`${name} has ${Math.round(leaderCond0.value - secondCond0.value)} more early start${Math.round(leaderCond0.value - secondCond0.value) !== 1 ? 's' : ''}`)
+    } else if (gap === 0 && leaderCond0.value > 0) {
+      facts.push(`Dead heat — ${leader.installer.name.split(' ')[0]} and ${second.installer.name.split(' ')[0]} are tied`)
     }
   }
 
-  if (leader && conditions[0] && leader.conds[0] && leader.overallPct > 0.5 && leader.overallPct < 1) {
-    const cond = conditions[0]
-    const target = cond.condition_type === 'early_clock_in' ? 1 : cond.value
-    const remaining = target - leader.conds[0].value
-    const name = leader.installer.name.split(' ')[0]
-    if (cond.condition_type === 'sqft_total' && remaining > 0)
-      facts.push(`${name} needs ${remaining.toFixed(1)} more sqft to win`)
-    else if (cond.condition_type === 'panels' && remaining > 0)
-      facts.push(`${name} needs ${Math.ceil(remaining)} more panel${Math.ceil(remaining) !== 1 ? 's' : ''}`)
+  // ── distance to win ──
+  if (firstCond && leaderCond0 && leader.overallPct > 0.45 && leader.overallPct < 1) {
+    const t   = firstCond.condition_type as ConditionType
+    const tgt = t === 'early_clock_in' ? 1 : firstCond.value
+    const rem = tgt - leaderCond0.value
+    const n   = leader.installer.name.split(' ')[0]
+    if (rem > 0) {
+      if (t === 'sqft_total' || t === 'sqft_cc')
+        facts.push(`${n} needs ${rem.toFixed(1)} more sqft — one solid session`)
+      else if (t === 'panels' || t === 'panels_cc')
+        facts.push(`${n} needs ${Math.ceil(rem)} more panel${Math.ceil(rem) !== 1 ? 's' : ''}`)
+      else if (t === 'sqft_single_day')
+        facts.push(`Hit ${rem.toFixed(1)} more sqft in one day to win`)
+      else if (t === 'total_hours')
+        facts.push(`${n} is ${rem.toFixed(1)}h short — within one shift`)
+      else if (t === 'work_days')
+        facts.push(`${Math.ceil(rem)} more work day${Math.ceil(rem) !== 1 ? 's' : ''} and ${n} wins`)
+    }
   }
 
-  if (leader?.conds[0] && conditions[0]?.condition_type === 'sqft_total' && leader.conds[0].value > 100) {
-    const sqft = leader.conds[0].value
-    facts.push(`${sqft.toFixed(0)} sqft ≈ ${(sqft / 9).toFixed(0)} parking spaces`)
+  // ── "this is still wide open" (early, no clear leader) ──
+  if (board.length >= 2 && leader.overallPct < 0.3) {
+    facts.push('Wide open — anyone can take this')
   }
 
-  if (conditions.length > 1 && leader && leader.overallPct > 0) {
-    facts.push(`Parlay is ${(leader.overallPct * 100).toFixed(0)}% complete`)
+  // ── "one good day" framing ──
+  if (firstCond && leaderCond0) {
+    const t = firstCond.condition_type as ConditionType
+    if ((t === 'sqft_total' || t === 'sqft_cc') && leader.overallPct < 0.6) {
+      // estimate if a good day could flip things
+      const shopLogs = allLogs.filter(r => r.status === 'Complete' && !r.is_color_change && r.sqft && r.mins)
+      if (shopLogs.length > 5) {
+        const avgDay = shopLogs.reduce((s, r) => s + (r.sqft ?? 0), 0) /
+          new Set(shopLogs.map(r => new Date(r.start_ts).toDateString())).size
+        if (avgDay > 0 && avgDay / firstCond.value > 0.25) {
+          facts.push(`A strong day (${avgDay.toFixed(0)} sqft avg) could flip the standings`)
+        }
+      }
+    }
+    if (t === 'early_clock_in' && leaderCond0.value === 0) {
+      facts.push(`First one in before ${minsToTime(firstCond.value)} takes the lead instantly`)
+    }
+  }
+
+  // ── parlay ──
+  if (isParlay && leader) {
+    const doneConds = leader.conds.filter(c => c.done).length
+    const total     = conditions.length
+    if (doneConds > 0 && doneConds < total) {
+      facts.push(`${doneConds} of ${total} conditions done — ${total - doneConds} box${total - doneConds > 1 ? 'es' : ''} left to check`)
+    } else if (doneConds === 0) {
+      facts.push(`Parlay untouched — whoever gets momentum early wins this`)
+    }
+    // last condition remaining
+    if (doneConds === total - 1) {
+      const lastIncomplete = conditions.find((_, i) => !leader.conds[i]?.done)
+      if (lastIncomplete) {
+        facts.push(`One condition left: ${condLabel(lastIncomplete.condition_type as ConditionType, lastIncomplete.value)}`)
+      }
+    }
+  }
+
+  // ── urgency ──
+  if (dLeft != null && dLeft <= 2 && dLeft >= 0 && leader.overallPct < 1) {
+    facts.push(dLeft === 0
+      ? 'Last day — this ends today'
+      : 'Final 48 hours — anything can happen'
+    )
+  }
+
+  // ── sqft context ──
+  if (firstCond && (firstCond.condition_type === 'sqft_total' || firstCond.condition_type === 'sqft_single_day')) {
+    facts.push(sqftContext(firstCond.value))
+  }
+
+  // ── early-start pressure ──
+  if (firstCond?.condition_type === 'early_clock_in' && board.length > 1) {
+    const behindCount = board.filter(ip => ip.conds[0]?.value === 0).length
+    if (behindCount > 0)
+      facts.push(`${behindCount} installer${behindCount > 1 ? 's have' : ' has'} zero early starts — board is wide open`)
   }
 
   return facts.slice(0, 2)
@@ -190,154 +423,226 @@ function genFunFacts(bounty: Bounty, board: InstProg[]): string[] {
 
 // ── sub-components ────────────────────────────────────────────────────────────
 
-const MEDALS = ['#F5C400', '#B0B8C1', '#CD7F32']
+const MEDALS     = ['#F5C400', '#B0B8C1', '#CD7F32']
+const MEDAL_GLOW = ['rgba(245,196,0,0.35)', 'rgba(176,184,193,0.25)', 'rgba(205,127,50,0.25)']
 
 function ConditionRow({
   cond,
   prog,
+  showRemaining,
 }: {
   cond: BountyCondition
   prog?: CondProg
+  showRemaining?: boolean
 }) {
-  const type = cond.condition_type as ConditionType
-  const label = condLabel(type, cond.value)
-  const pct = prog?.pct ?? 0
-  const done = prog?.done ?? false
+  const type    = cond.condition_type as ConditionType
+  const label   = condLabel(type, cond.value)
+  const pct     = prog?.pct ?? 0
+  const done    = prog?.done ?? false
+  const nearWin = pct >= 0.75 && !done
+  const target  = type === 'early_clock_in' ? 1 : cond.value
+  const remaining = prog ? target - prog.value : target
 
   return (
-    <div style={{ marginBottom: 10 }}>
+    <div style={{ marginBottom: 12 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
-        <span style={{ fontSize: 12, color: done ? B.green : B.textSec, display: 'flex', gap: 6, alignItems: 'center' }}>
+        <span style={{
+          fontSize: 12,
+          color: done ? B.green : B.textSec,
+          display: 'flex',
+          gap: 7,
+          alignItems: 'center',
+        }}>
           {done
-            ? <span style={{ color: B.green, fontWeight: 800, fontSize: 13 }}>✓</span>
-            : <span style={{ width: 8, height: 8, borderRadius: '50%', background: B.yellow, display: 'inline-block', flexShrink: 0 }} />
+            ? <span style={{ color: B.green, fontWeight: 900, fontSize: 14, lineHeight: 1 }}>✓</span>
+            : <span style={{
+                width: 7, height: 7, borderRadius: '50%',
+                background: nearWin ? B.yellow : B.surface3,
+                display: 'inline-block', flexShrink: 0,
+                boxShadow: nearWin ? `0 0 6px ${B.yellow}88` : 'none',
+              }}
+              />
           }
-          {label}
+          <span style={{ fontWeight: done ? 700 : 500 }}>{label}</span>
         </span>
         {prog && (
-          <span style={{ fontSize: 11, fontWeight: 700, color: done ? B.green : B.yellow, flexShrink: 0 }}>
-            {condValueDisplay(type, prog.value)} / {condTargetDisplay(cond)}
+          <span style={{ fontSize: 11, fontWeight: 700, color: done ? B.green : nearWin ? B.yellow : B.textSec, flexShrink: 0 }}>
+            {condValueStr(type, prog.value)} / {condTargetStr(cond)}
           </span>
         )}
       </div>
-      <div style={{ height: 7, background: B.surface3, borderRadius: 4, overflow: 'hidden' }}>
-        <div style={{
-          height: '100%',
-          width: `${Math.min(100, pct * 100)}%`,
-          background: done ? B.green : `linear-gradient(90deg, ${B.yellow}, ${B.orange})`,
-          borderRadius: 4,
-          transition: 'width 0.6s ease',
-        }} />
+
+      <div style={{ height: 8, background: B.surface3, borderRadius: 4, overflow: 'hidden', position: 'relative' }}>
+        <div
+          className={nearWin ? 'bounty-shimmer' : ''}
+          style={{
+            height: '100%',
+            width: `${Math.min(100, pct * 100)}%`,
+            background: done
+              ? B.green
+              : nearWin
+                ? `linear-gradient(90deg, ${B.yellow}, #FF9F0A)`
+                : `linear-gradient(90deg, ${B.yellow}88, ${B.yellow})`,
+            borderRadius: 4,
+            transition: 'width 0.7s ease',
+          }}
+        />
       </div>
+
+      {showRemaining && prog && !done && remaining > 0 && pct > 0.4 && (
+        <div style={{ fontSize: 10, color: nearWin ? B.yellow : B.textTer, marginTop: 4, fontWeight: nearWin ? 700 : 400 }}>
+          {condRemainingStr(type, remaining)}
+        </div>
+      )}
     </div>
   )
 }
 
 function MiniLeaderboard({
   board,
+  conditions,
   winnerId,
   onAward,
   isAdmin,
 }: {
   board: InstProg[]
+  conditions: BountyCondition[]
   winnerId: string | null
   onAward?: (ip: InstProg) => void
   isAdmin: boolean
 }) {
   const top = board.slice(0, 4)
   if (!top.length) return (
-    <div style={{ fontSize: 12, color: B.textTer, padding: '8px 0' }}>No activity yet</div>
+    <div style={{ fontSize: 12, color: B.textTer, padding: '8px 0', fontStyle: 'italic' }}>No activity yet — be first.</div>
   )
 
+  const isCloseRace = top.length >= 2 &&
+    top[0].overallPct > 0.15 &&
+    (top[0].overallPct - top[1].overallPct) < 0.09
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      {top.map((ip, i) => {
-        const isLeader = i === 0
-        const isWinner = ip.installer.id === winnerId
-        return (
-          <div
-            key={ip.installer.id}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              padding: '9px 12px',
-              borderRadius: 10,
-              background: isWinner ? `${B.yellow}12` : isLeader ? `${B.yellow}08` : B.surface2,
-              border: `1px solid ${isWinner ? B.yellow + '55' : isLeader ? B.yellow + '22' : 'transparent'}`,
-            }}
-          >
-            <div style={{
-              fontSize: 11,
-              fontWeight: 800,
-              color: MEDALS[i] ?? B.textTer,
-              minWidth: 18,
-              textAlign: 'center',
-            }}>
-              {i + 1}
-            </div>
-            <div style={{
-              width: 28,
-              height: 28,
-              borderRadius: '50%',
-              background: ip.installer.color,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 11,
-              fontWeight: 800,
-              color: B.bg,
-              flexShrink: 0,
-              boxShadow: isLeader && ip.overallPct > 0 ? `0 0 10px ${ip.installer.color}55` : 'none',
-            }}>
-              {ip.installer.name.charAt(0)}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: isLeader ? 700 : 500, marginBottom: 3 }}>
-                {ip.installer.name.split(' ')[0]}
-                {isWinner && <span style={{ marginLeft: 6, fontSize: 12 }}>🏆</span>}
-                {ip.allDone && !isWinner && <span style={{ marginLeft: 6, fontSize: 10, color: B.green, fontWeight: 700 }}>DONE</span>}
-              </div>
-              <div style={{ height: 4, background: B.surface3, borderRadius: 2, overflow: 'hidden' }}>
-                <div style={{
-                  height: '100%',
-                  width: `${Math.min(100, ip.overallPct * 100)}%`,
-                  background: ip.allDone ? B.green : ip.installer.color,
-                  borderRadius: 2,
-                  transition: 'width 0.6s',
-                }} />
-              </div>
-            </div>
-            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+    <div>
+      {isCloseRace && (
+        <div style={{
+          fontSize: 10, fontWeight: 800, color: B.orange,
+          letterSpacing: '0.1em', textTransform: 'uppercase',
+          marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6,
+        }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: B.orange, display: 'inline-block' }} />
+          Photo finish — gap is under 9%
+        </div>
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+        {top.map((ip, i) => {
+          const isLeader = i === 0
+          const isWinner = ip.installer.id === winnerId
+          const nearWin  = ip.overallPct >= 0.8 && !ip.allDone
+
+          return (
+            <div
+              key={ip.installer.id}
+              className={nearWin && isLeader ? 'bounty-glow-pulse' : ''}
+              style={{
+                '--glow-color': MEDAL_GLOW[i] ?? 'transparent',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '9px 12px',
+                borderRadius: 10,
+                background: isWinner
+                  ? `linear-gradient(90deg, ${B.yellow}14, ${B.yellow}06)`
+                  : isLeader
+                    ? `${B.yellow}08`
+                    : B.surface2,
+                border: `1px solid ${isWinner ? B.yellow + '55' : isLeader ? B.yellow + '22' : 'transparent'}`,
+              } as React.CSSProperties}
+            >
               <div style={{
-                fontSize: 14,
-                fontWeight: 800,
-                color: ip.allDone ? B.green : isLeader ? B.yellow : B.text,
+                fontSize: 11, fontWeight: 800,
+                color: MEDALS[i] ?? B.textTer,
+                minWidth: 18, textAlign: 'center',
               }}>
-                {(ip.overallPct * 100).toFixed(0)}%
+                {i + 1}
               </div>
-              {isAdmin && onAward && !winnerId && (
-                <button
-                  onClick={() => onAward(ip)}
-                  style={{
-                    fontSize: 10,
-                    color: B.textTer,
-                    background: 'none',
-                    border: `1px solid ${B.border}`,
-                    borderRadius: 6,
-                    padding: '2px 6px',
-                    cursor: 'pointer',
-                    marginTop: 2,
-                    display: 'block',
-                  }}
-                >
-                  Award
-                </button>
-              )}
+              <div style={{
+                width: 30, height: 30, borderRadius: '50%',
+                background: ip.installer.color,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 12, fontWeight: 800, color: B.bg, flexShrink: 0,
+                boxShadow: isLeader && ip.overallPct > 0
+                  ? `0 0 12px ${ip.installer.color}55`
+                  : 'none',
+              }}>
+                {ip.installer.name.charAt(0)}
+              </div>
+
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: isLeader ? 700 : 500, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {ip.installer.name.split(' ')[0]}
+                  {isWinner && <span style={{ fontSize: 11 }}>🏆</span>}
+                  {ip.allDone && !isWinner && (
+                    <span style={{ fontSize: 9, color: B.green, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', background: B.green + '18', padding: '1px 5px', borderRadius: 4 }}>
+                      DONE
+                    </span>
+                  )}
+                </div>
+                {/* Per-condition progress for parlay */}
+                {conditions.length > 1 ? (
+                  <div style={{ display: 'flex', gap: 3 }}>
+                    {conditions.map((_, ci) => {
+                      const cp = ip.conds[ci]
+                      return (
+                        <div key={ci} style={{
+                          flex: 1, height: 4, background: B.surface3, borderRadius: 2, overflow: 'hidden',
+                        }}>
+                          <div style={{
+                            height: '100%',
+                            width: `${Math.min(100, (cp?.pct ?? 0) * 100)}%`,
+                            background: cp?.done ? B.green : ip.installer.color,
+                            borderRadius: 2,
+                          }} />
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div style={{ height: 4, background: B.surface3, borderRadius: 2, overflow: 'hidden' }}>
+                    <div style={{
+                      height: '100%',
+                      width: `${Math.min(100, ip.overallPct * 100)}%`,
+                      background: ip.allDone ? B.green : ip.installer.color,
+                      borderRadius: 2,
+                      transition: 'width 0.7s',
+                    }} />
+                  </div>
+                )}
+              </div>
+
+              <div style={{ textAlign: 'right', flexShrink: 0, minWidth: 44 }}>
+                <div style={{
+                  fontSize: 15, fontWeight: 800,
+                  color: ip.allDone ? B.green : isLeader ? B.yellow : B.text,
+                }}>
+                  {(ip.overallPct * 100).toFixed(0)}%
+                </div>
+                {isAdmin && onAward && !winnerId && (
+                  <button
+                    onClick={() => onAward(ip)}
+                    style={{
+                      fontSize: 9, color: B.textTer, background: 'none',
+                      border: `1px solid ${B.border}`, borderRadius: 5,
+                      padding: '2px 5px', cursor: 'pointer', marginTop: 2, display: 'block',
+                      letterSpacing: '0.05em', textTransform: 'uppercase', fontWeight: 600,
+                    }}
+                  >
+                    Award
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-        )
-      })}
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -345,6 +650,7 @@ function MiniLeaderboard({
 function FeaturedBountyCard({
   bounty,
   board,
+  facts,
   isAdmin,
   onAward,
   onToggle,
@@ -352,97 +658,98 @@ function FeaturedBountyCard({
 }: {
   bounty: Bounty
   board: InstProg[]
+  facts: string[]
   isAdmin: boolean
   onAward: (ip: InstProg) => void
   onToggle: () => void
   onDelete: () => void
 }) {
   const conditions = bounty.conditions ?? []
-  const leader = board[0]
-  const facts = genFunFacts(bounty, board)
-  const tLeft = fmtTimeLeft(bounty.end_date)
-  const tColor = timeLeftColor(bounty.end_date)
-  const isParlay = conditions.length > 1
-  const winner = board.find(ip => ip.installer.id === bounty.winner_installer_id)
+  const leader     = board[0]
+  const tLeft      = fmtTimeLeft(bounty.end_date)
+  const tColor     = timeLeftColor(bounty.end_date)
+  const dLeft      = daysLeftFromEnd(bounty.end_date)
+  const isParlay   = conditions.length > 1
+  const winner     = board.find(ip => ip.installer.id === bounty.winner_installer_id)
+  const isUrgent   = dLeft != null && dLeft <= 2 && dLeft >= 0 && !winner
+  const doneConds  = leader?.conds.filter(c => c.done).length ?? 0
 
   return (
     <div style={{
-      background: 'linear-gradient(145deg, #1C1C1E 0%, #242420 100%)',
-      border: `1.5px solid ${B.yellow}33`,
+      background: 'linear-gradient(145deg, #1C1C1E 0%, #222220 100%)',
+      border: `1.5px solid ${isUrgent ? B.red + '55' : B.yellow + '33'}`,
       borderRadius: 20,
-      padding: 24,
+      padding: 22,
       marginBottom: 20,
-      boxShadow: `0 0 40px rgba(245,196,0,0.07), 0 8px 32px rgba(0,0,0,0.5)`,
+      boxShadow: `0 0 48px rgba(245,196,0,0.06), 0 12px 40px rgba(0,0,0,0.55)`,
       position: 'relative',
       overflow: 'hidden',
     }}>
-      {/* Glow accent */}
+      {/* Background glow */}
       <div style={{
-        position: 'absolute',
-        top: 0,
-        right: 0,
-        width: 200,
-        height: 200,
-        background: `radial-gradient(circle, ${B.yellow}10 0%, transparent 70%)`,
+        position: 'absolute', top: -40, right: -40,
+        width: 220, height: 220,
+        background: `radial-gradient(circle, ${isUrgent ? B.red : B.yellow}0D 0%, transparent 70%)`,
         pointerEvents: 'none',
       }} />
 
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, position: 'relative' }}>
+      {/* Header row */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, position: 'relative' }}>
         <div style={{ flex: 1, marginRight: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7, flexWrap: 'wrap' }}>
             <div style={{
-              fontSize: 10,
-              fontWeight: 800,
-              color: B.yellow,
-              letterSpacing: '0.12em',
-              textTransform: 'uppercase',
+              fontSize: 9, fontWeight: 900, color: B.yellow,
+              letterSpacing: '0.14em', textTransform: 'uppercase',
+              background: `${B.yellow}14`, border: `1px solid ${B.yellow}33`,
+              borderRadius: 5, padding: '2px 7px',
             }}>
-              {winner ? '🏆 Closed' : isParlay ? '⚡ Parlay Bounty' : '◆ Featured'}
+              {winner ? '🏆 Closed' : isParlay ? '⚡ Parlay' : '◆ Featured'}
             </div>
+            {isParlay && !winner && leader && (
+              <div style={{
+                fontSize: 9, fontWeight: 800,
+                color: doneConds === conditions.length ? B.green : B.textSec,
+                background: doneConds === conditions.length ? B.green + '18' : B.surface3,
+                border: `1px solid ${doneConds === conditions.length ? B.green + '44' : 'transparent'}`,
+                borderRadius: 5, padding: '2px 7px', letterSpacing: '0.06em', textTransform: 'uppercase',
+              }}>
+                {doneConds}/{conditions.length} done
+              </div>
+            )}
             {isAdmin && !winner && (
-              <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
-                <button
-                  onClick={onToggle}
-                  style={{ fontSize: 10, color: B.textTer, background: 'none', border: `1px solid ${B.border}`, borderRadius: 6, padding: '2px 8px', cursor: 'pointer' }}
-                >
-                  Pause
-                </button>
-                <button
-                  onClick={onDelete}
-                  style={{ fontSize: 10, color: B.red, background: 'none', border: `1px solid ${B.red}44`, borderRadius: 6, padding: '2px 8px', cursor: 'pointer' }}
-                >
-                  Delete
-                </button>
+              <div style={{ display: 'flex', gap: 5, marginLeft: 'auto' }}>
+                <button onClick={onToggle} style={{ fontSize: 10, color: B.textTer, background: 'none', border: `1px solid ${B.border}`, borderRadius: 6, padding: '2px 8px', cursor: 'pointer' }}>Pause</button>
+                <button onClick={onDelete} style={{ fontSize: 10, color: B.red, background: 'none', border: `1px solid ${B.red}44`, borderRadius: 6, padding: '2px 8px', cursor: 'pointer' }}>Delete</button>
               </div>
             )}
           </div>
-          <div style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.2, marginBottom: 8, letterSpacing: '-0.02em' }}>
+
+          <div style={{ fontSize: 21, fontWeight: 800, lineHeight: 1.2, letterSpacing: '-0.02em', marginBottom: 10 }}>
             {bounty.title}
           </div>
+
+          {/* Reward — prominent */}
           <div style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            background: `${B.yellow}18`,
-            border: `1px solid ${B.yellow}44`,
-            borderRadius: 10,
-            padding: '5px 12px',
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            background: `linear-gradient(90deg, ${B.yellow}20, ${B.yellow}10)`,
+            border: `1px solid ${B.yellow}55`,
+            borderRadius: 10, padding: '6px 14px',
           }}>
-            <span style={{ fontSize: 13, fontWeight: 800, color: B.yellow }}>{bounty.reward}</span>
+            <span style={{ fontSize: 10, fontWeight: 700, color: B.yellow, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Prize</span>
+            <span style={{ fontSize: 15, fontWeight: 800, color: B.yellow }}>{bounty.reward}</span>
           </div>
         </div>
+
+        {/* Time left */}
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
-          <div style={{
-            fontSize: 12,
-            fontWeight: 700,
-            color: tColor,
-            background: tColor + '18',
-            border: `1px solid ${tColor}33`,
-            borderRadius: 8,
-            padding: '4px 10px',
-            marginBottom: 4,
-          }}>
+          <div
+            className={isUrgent ? 'bounty-urgency' : ''}
+            style={{
+              fontSize: 12, fontWeight: 700, color: tColor,
+              background: tColor + '18', border: `1px solid ${tColor}44`,
+              borderRadius: 8, padding: '4px 10px', marginBottom: 4,
+            }}
+          >
             {tLeft}
           </div>
           <div style={{ fontSize: 10, color: B.textTer }}>
@@ -454,46 +761,47 @@ function FeaturedBountyCard({
       {/* Winner banner */}
       {winner && (
         <div style={{
-          background: `linear-gradient(90deg, ${B.yellow}22, ${B.yellow}08)`,
-          border: `1px solid ${B.yellow}55`,
-          borderRadius: 12,
-          padding: '10px 16px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          marginBottom: 16,
+          background: `linear-gradient(90deg, ${B.yellow}20, ${B.yellow}08)`,
+          border: `1px solid ${B.yellow}55`, borderRadius: 12,
+          padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16,
         }}>
-          <div style={{ width: 32, height: 32, borderRadius: '50%', background: winner.installer.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, color: B.bg }}>
+          <div style={{ width: 34, height: 34, borderRadius: '50%', background: winner.installer.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, color: B.bg, boxShadow: `0 0 14px ${winner.installer.color}55` }}>
             {winner.installer.name.charAt(0)}
           </div>
           <div>
-            <div style={{ fontSize: 11, color: B.yellow, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Winner</div>
-            <div style={{ fontSize: 15, fontWeight: 800 }}>{winner.installer.name}</div>
+            <div style={{ fontSize: 10, color: B.yellow, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Winner</div>
+            <div style={{ fontSize: 16, fontWeight: 800 }}>{winner.installer.name}</div>
           </div>
-          <span style={{ marginLeft: 'auto', fontSize: 22 }}>🏆</span>
+          <span style={{ marginLeft: 'auto', fontSize: 24 }}>🏆</span>
         </div>
       )}
 
-      {/* Leader highlight */}
+      {/* Leader highlight (when no winner yet) */}
       {!winner && leader && leader.overallPct > 0 && (
         <div style={{
-          background: `${leader.installer.color}10`,
+          background: `${leader.installer.color}0E`,
           border: `1px solid ${leader.installer.color}33`,
-          borderRadius: 12,
-          padding: '10px 14px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          marginBottom: 16,
+          borderRadius: 12, padding: '10px 14px',
+          display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16,
         }}>
-          <div style={{ width: 34, height: 34, borderRadius: '50%', background: leader.installer.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, color: B.bg, boxShadow: `0 0 14px ${leader.installer.color}44` }}>
+          <div
+            className={leader.overallPct >= 0.8 ? 'bounty-glow-pulse' : ''}
+            style={{
+              '--glow-color': `${leader.installer.color}55`,
+              width: 36, height: 36, borderRadius: '50%',
+              background: leader.installer.color,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 15, fontWeight: 800, color: B.bg,
+              boxShadow: `0 0 14px ${leader.installer.color}44`,
+            } as React.CSSProperties}
+          >
             {leader.installer.name.charAt(0)}
           </div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 11, color: B.textTer, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 2 }}>Leading</div>
+            <div style={{ fontSize: 10, color: B.textTer, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 2 }}>Leading</div>
             <div style={{ fontSize: 15, fontWeight: 800 }}>{leader.installer.name.split(' ')[0]}</div>
           </div>
-          <div style={{ fontSize: 24, fontWeight: 800, color: leader.installer.color }}>
+          <div style={{ fontSize: 26, fontWeight: 900, color: leader.installer.color, letterSpacing: '-0.02em' }}>
             {(leader.overallPct * 100).toFixed(0)}%
           </div>
         </div>
@@ -501,17 +809,28 @@ function FeaturedBountyCard({
 
       {/* Conditions */}
       {conditions.length > 0 && (
-        <div style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: 14 }}>
           {isParlay && (
-            <div style={{ fontSize: 10, fontWeight: 700, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
-              All conditions must be met
+            <div style={{ fontSize: 9, fontWeight: 700, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 10 }}>
+              All must be met · Parlay
             </div>
           )}
-          {conditions.map(cond => (
+          {/* "Last condition" callout */}
+          {isParlay && doneConds === conditions.length - 1 && doneConds > 0 && (
+            <div style={{
+              background: `${B.orange}12`, border: `1px solid ${B.orange}44`,
+              borderRadius: 8, padding: '6px 12px', marginBottom: 10,
+              fontSize: 11, color: B.orange, fontWeight: 700,
+            }}>
+              ⚡ One condition left — finish the parlay
+            </div>
+          )}
+          {conditions.map((cond, ci) => (
             <ConditionRow
               key={cond.id}
               cond={cond}
-              prog={leader?.conds[conditions.indexOf(cond)]}
+              prog={leader?.conds[ci]}
+              showRemaining
             />
           ))}
         </div>
@@ -519,12 +838,13 @@ function FeaturedBountyCard({
 
       {/* Leaderboard */}
       {board.length > 0 && (
-        <div style={{ marginBottom: facts.length > 0 ? 16 : 0 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
+        <div style={{ marginBottom: facts.length > 0 ? 14 : 0 }}>
+          <div style={{ fontSize: 9, fontWeight: 700, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>
             Standings
           </div>
           <MiniLeaderboard
             board={board}
+            conditions={conditions}
             winnerId={bounty.winner_installer_id}
             onAward={onAward}
             isAdmin={isAdmin}
@@ -534,11 +854,11 @@ function FeaturedBountyCard({
 
       {/* Fun facts */}
       {facts.length > 0 && !winner && (
-        <div style={{ borderTop: `1px solid ${B.border}`, paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ borderTop: `1px solid ${B.border}`, paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 7 }}>
           {facts.map((f, i) => (
             <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-              <span style={{ color: B.yellow, fontSize: 12, flexShrink: 0, marginTop: 1 }}>◆</span>
-              <span style={{ fontSize: 12, color: B.textSec, lineHeight: 1.5 }}>{f}</span>
+              <span style={{ color: B.yellow, fontSize: 11, flexShrink: 0, marginTop: 1 }}>◆</span>
+              <span style={{ fontSize: 12, color: B.textSec, lineHeight: 1.55 }}>{f}</span>
             </div>
           ))}
         </div>
@@ -550,6 +870,7 @@ function FeaturedBountyCard({
 function ActiveBountyCard({
   bounty,
   board,
+  facts,
   isAdmin,
   onAward,
   onToggle,
@@ -557,76 +878,85 @@ function ActiveBountyCard({
 }: {
   bounty: Bounty
   board: InstProg[]
+  facts: string[]
   isAdmin: boolean
   onAward: (ip: InstProg) => void
   onToggle: () => void
   onDelete: () => void
 }) {
   const conditions = bounty.conditions ?? []
-  const isParlay = conditions.length > 1
-  const tLeft = fmtTimeLeft(bounty.end_date)
-  const tColor = timeLeftColor(bounty.end_date)
-  const leader = board[0]
+  const isParlay   = conditions.length > 1
+  const tLeft      = fmtTimeLeft(bounty.end_date)
+  const tColor     = timeLeftColor(bounty.end_date)
+  const dLeft      = daysLeftFromEnd(bounty.end_date)
+  const isUrgent   = dLeft != null && dLeft <= 2 && dLeft >= 0
+  const leader     = board[0]
+  const doneConds  = leader?.conds.filter(c => c.done).length ?? 0
 
   return (
     <div style={{
       background: B.surface,
-      border: `1px solid ${B.border}`,
+      border: `1px solid ${isUrgent ? B.red + '33' : B.border}`,
       borderRadius: 16,
-      padding: 18,
+      padding: '16px 18px',
       marginBottom: 12,
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
         <div style={{ flex: 1, marginRight: 8 }}>
-          {isParlay && (
-            <div style={{ fontSize: 10, fontWeight: 700, color: B.purple, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>⚡ Parlay</div>
-          )}
-          <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>{bounty.title}</div>
-          <div style={{ fontSize: 12, color: B.yellow, fontWeight: 700 }}>{bounty.reward}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+            {isParlay && (
+              <span style={{ fontSize: 9, fontWeight: 700, color: B.purple, letterSpacing: '0.1em', textTransform: 'uppercase', background: B.purple + '18', padding: '2px 6px', borderRadius: 4 }}>⚡ Parlay</span>
+            )}
+            {isParlay && leader && (
+              <span style={{ fontSize: 9, fontWeight: 700, color: doneConds === conditions.length ? B.green : B.textTer, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                {doneConds}/{conditions.length} done
+              </span>
+            )}
+          </div>
+          <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 3 }}>{bounty.title}</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: B.yellow }}>{bounty.reward}</div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: tColor }}>{tLeft}</div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5 }}>
+          <div
+            className={isUrgent ? 'bounty-urgency' : ''}
+            style={{ fontSize: 11, fontWeight: 700, color: tColor }}
+          >
+            {tLeft}
+          </div>
           {isAdmin && (
             <div style={{ display: 'flex', gap: 5 }}>
-              <button
-                onClick={onToggle}
-                style={{ fontSize: 10, color: B.textTer, background: 'none', border: `1px solid ${B.border}`, borderRadius: 6, padding: '2px 7px', cursor: 'pointer' }}
-              >
-                Pause
-              </button>
-              <button
-                onClick={onDelete}
-                style={{ fontSize: 10, color: B.red, background: 'none', border: `1px solid ${B.red}44`, borderRadius: 6, padding: '2px 7px', cursor: 'pointer' }}
-              >
-                ×
-              </button>
+              <button onClick={onToggle} style={{ fontSize: 10, color: B.textTer, background: 'none', border: `1px solid ${B.border}`, borderRadius: 6, padding: '2px 7px', cursor: 'pointer' }}>Pause</button>
+              <button onClick={onDelete} style={{ fontSize: 10, color: B.red, background: 'none', border: `1px solid ${B.red}44`, borderRadius: 6, padding: '2px 7px', cursor: 'pointer' }}>×</button>
             </div>
           )}
         </div>
       </div>
 
-      {/* Conditions */}
       <div style={{ marginBottom: 12 }}>
-        {conditions.map(cond => (
+        {conditions.map((cond, ci) => (
           <ConditionRow
             key={cond.id}
             cond={cond}
-            prog={leader?.conds[conditions.indexOf(cond)]}
+            prog={leader?.conds[ci]}
+            showRemaining
           />
         ))}
       </div>
 
-      {/* Standings */}
-      {board.length > 0 && (
-        <MiniLeaderboard
-          board={board}
-          winnerId={bounty.winner_installer_id}
-          onAward={onAward}
-          isAdmin={isAdmin}
-        />
-      )}
-      {!board.length && (
-        <div style={{ fontSize: 12, color: B.textTer, padding: '4px 0' }}>No activity yet — be first.</div>
+      <MiniLeaderboard
+        board={board}
+        conditions={conditions}
+        winnerId={bounty.winner_installer_id}
+        onAward={onAward}
+        isAdmin={isAdmin}
+      />
+
+      {facts.length > 0 && (
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${B.border}` }}>
+          <span style={{ fontSize: 11, color: B.textTer, fontStyle: 'italic' }}>
+            {facts[0]}
+          </span>
+        </div>
       )}
     </div>
   )
@@ -636,57 +966,86 @@ function CompletedCard({ bounty, winner }: { bounty: Bounty; winner: Installer |
   return (
     <div style={{
       background: B.surface,
-      border: `1px solid ${B.border}`,
+      border: `1px solid ${winner ? B.yellow + '22' : B.border}`,
       borderRadius: 14,
-      padding: '14px 16px',
+      padding: '13px 16px',
       marginBottom: 8,
       display: 'flex',
       alignItems: 'center',
       gap: 12,
     }}>
-      <div style={{ fontSize: 20, flexShrink: 0 }}>🏆</div>
+      <div style={{
+        width: 34, height: 34, borderRadius: 8,
+        background: winner ? `${B.yellow}18` : B.surface2,
+        border: `1px solid ${winner ? B.yellow + '44' : B.border}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 16, flexShrink: 0,
+      }}>🏆</div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 2 }}>{bounty.title}</div>
-        <div style={{ fontSize: 12, color: B.textTer }}>
-          {bounty.reward} · {fmtDate(bounty.start_date)}
-          {bounty.end_date ? ` – ${fmtDate(bounty.end_date)}` : ''}
+        <div style={{ fontSize: 11, color: B.textTer }}>
+          {bounty.reward} · {fmtDate(bounty.start_date)}{bounty.end_date ? ` – ${fmtDate(bounty.end_date)}` : ''}
         </div>
       </div>
-      {winner && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-          <div style={{ width: 26, height: 26, borderRadius: '50%', background: winner.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800, color: B.bg }}>
+      {winner ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0 }}>
+          <div style={{ width: 28, height: 28, borderRadius: '50%', background: winner.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: B.bg, boxShadow: `0 0 10px ${winner.color}44` }}>
             {winner.name.charAt(0)}
           </div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: B.yellow }}>{winner.name.split(' ')[0]}</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: B.yellow }}>{winner.name.split(' ')[0]}</div>
         </div>
-      )}
-      {!winner && (
-        <div style={{ fontSize: 11, color: B.textTer }}>No winner set</div>
+      ) : (
+        <div style={{ fontSize: 11, color: B.textTer }}>No winner</div>
       )}
     </div>
   )
 }
 
-// ── form types ────────────────────────────────────────────────────────────────
+// ── form config ───────────────────────────────────────────────────────────────
 
-interface CondRow {
-  id: number
-  type: ConditionType
-  valueStr: string
-}
+interface CondRow { id: number; type: ConditionType; valueStr: string }
 
-const COND_TYPE_LABELS: Record<ConditionType, string> = {
-  sqft_total: 'Total SQFT',
-  panels: 'Panel Count',
-  sqft_per_hr: 'Avg SQFT/HR',
-  early_clock_in: 'Early Clock-In',
-}
+const COND_GROUPS: { label: string; types: { type: ConditionType; label: string; placeholder: string; help: string }[] }[] = [
+  {
+    label: 'Volume',
+    types: [
+      { type: 'sqft_total',        label: 'Commercial SQFT',       placeholder: '500',  help: 'Total sqft installed (commercial)' },
+      { type: 'sqft_cc',           label: 'Color Change SQFT',     placeholder: '200',  help: 'Total sqft installed (CC)' },
+      { type: 'panels',            label: 'Commercial Panels',     placeholder: '10',   help: 'Total commercial panels completed' },
+      { type: 'panels_cc',         label: 'Color Change Panels',   placeholder: '5',    help: 'Total CC panels completed' },
+      { type: 'total_hours',       label: 'Hours on Clock',        placeholder: '40',   help: 'Total time logged (hours)' },
+      { type: 'work_days',         label: 'Days Worked',           placeholder: '5',    help: 'Distinct calendar days with any activity' },
+    ],
+  },
+  {
+    label: 'Single Day Challenge',
+    types: [
+      { type: 'sqft_single_day',   label: 'SQFT in One Day',       placeholder: '200',  help: 'Hit this sqft total in a single day' },
+      { type: 'panels_single_day', label: 'Panels in One Day',     placeholder: '4',    help: 'Hit this many panels in one day' },
+      { type: 'best_sqft_hr_day',  label: 'Best Day SQFT/HR',      placeholder: '30',   help: 'Avg sqft/hr across any single work day' },
+    ],
+  },
+  {
+    label: 'Efficiency',
+    types: [
+      { type: 'sqft_per_hr',       label: 'Avg SQFT/HR (range)',   placeholder: '25',   help: 'Rolling average sqft/hr over full range' },
+    ],
+  },
+  {
+    label: 'Early Start',
+    types: [
+      { type: 'early_clock_in',    label: 'Clock In Before Time',  placeholder: '',     help: 'First to clock in before this time wins' },
+    ],
+  },
+]
+
+const ALL_COND_CONFIG = COND_GROUPS.flatMap(g => g.types)
 
 // ── main component ────────────────────────────────────────────────────────────
 
 export default function Bounties() {
   const { logs, installers } = useAppData()
-  const { isAdmin } = useAuth()
+  const { isAdmin }          = useAuth()
   const { bounties, loading, createBounty, deleteBounty, toggleActive, awardWin } = useBounties()
 
   const condIdRef = useRef(0)
@@ -695,25 +1054,25 @@ export default function Bounties() {
   }
 
   const [showCreate, setShowCreate] = useState(false)
-  const [toast, setToast] = useState('')
-  const [warn, setWarn] = useState<WarnConfig | null>(null)
-  const [saving, setSaving] = useState(false)
+  const [toast,      setToast]      = useState('')
+  const [warn,       setWarn]       = useState<WarnConfig | null>(null)
+  const [saving,     setSaving]     = useState(false)
 
-  // Create form state
-  const [fTitle, setFTitle] = useState('')
+  const [fTitle,  setFTitle]  = useState('')
   const [fReward, setFReward] = useState('')
-  const [fStart, setFStart] = useState(new Date().toISOString().slice(0, 10))
-  const [fEnd, setFEnd] = useState('')
-  const [fConds, setFConds] = useState<CondRow[]>([newCondRow()])
+  const [fStart,  setFStart]  = useState(new Date().toISOString().slice(0, 10))
+  const [fEnd,    setFEnd]    = useState('')
+  const [fConds,  setFConds]  = useState<CondRow[]>([newCondRow()])
 
-  const activeBounties = useMemo(() => bounties.filter(b => b.active), [bounties])
+  const activeBounties    = useMemo(() => bounties.filter(b =>  b.active), [bounties])
   const completedBounties = useMemo(() => bounties.filter(b => !b.active), [bounties])
 
-  // Pre-calculate leaderboards for all bounties
   const boardsByBounty = useMemo(() => {
-    const m = new Map<string, InstProg[]>()
+    const m = new Map<string, { board: InstProg[]; facts: string[] }>()
     for (const b of bounties) {
-      m.set(b.id, calcLeaderboard(b, installers, logs))
+      const board = calcLeaderboard(b, installers, logs)
+      const facts = genFunFacts(b, board, logs)
+      m.set(b.id, { board, facts })
     }
     return m
   }, [bounties, installers, logs])
@@ -723,7 +1082,7 @@ export default function Bounties() {
   function handleAward(bounty: Bounty, ip: InstProg) {
     setWarn({
       title: `Award win to ${ip.installer.name.split(' ')[0]}?`,
-      body: `This will close the bounty and mark ${ip.installer.name} as the winner. This cannot be undone.`,
+      body: `This will close the bounty and mark ${ip.installer.name} as the winner.`,
       ok: '🏆 Award Win',
       cancel: 'Cancel',
       onOk: async () => {
@@ -738,9 +1097,7 @@ export default function Bounties() {
     setWarn({
       title: 'Delete this bounty?',
       body: `"${bounty.title}" will be permanently removed.`,
-      ok: 'Delete',
-      cancel: 'Cancel',
-      danger: true,
+      ok: 'Delete', cancel: 'Cancel', danger: true,
       onOk: async () => {
         const { error } = await deleteBounty(bounty.id)
         if (error) setToast('Error: ' + error)
@@ -752,11 +1109,8 @@ export default function Bounties() {
   function handleToggle(bounty: Bounty) {
     setWarn({
       title: bounty.active ? 'Pause this bounty?' : 'Resume this bounty?',
-      body: bounty.active
-        ? 'Progress is preserved. You can resume it later.'
-        : 'This bounty will go back to active.',
-      ok: bounty.active ? 'Pause' : 'Resume',
-      cancel: 'Cancel',
+      body: bounty.active ? 'Progress is preserved.' : 'Bounty goes back to active.',
+      ok: bounty.active ? 'Pause' : 'Resume', cancel: 'Cancel',
       onOk: async () => {
         const { error } = await toggleActive(bounty.id, !bounty.active)
         if (error) setToast('Error: ' + error)
@@ -766,20 +1120,17 @@ export default function Bounties() {
 
   async function handleCreate() {
     if (!fTitle.trim() || !fReward.trim() || !fStart) {
-      setToast('Title, reward, and start date are required')
-      return
+      setToast('Title, reward, and start date are required'); return
     }
     if (fConds.some(c => !c.valueStr)) {
-      setToast('All conditions need a value')
-      return
+      setToast('All conditions need a value'); return
     }
-
     setSaving(true)
     const { error } = await createBounty({
-      title: fTitle.trim(),
-      reward: fReward.trim(),
+      title:     fTitle.trim(),
+      reward:    fReward.trim(),
       startDate: fStart,
-      endDate: fEnd || null,
+      endDate:   fEnd || null,
       conditions: fConds.map(c => ({
         conditionType: c.type,
         operator: '>=',
@@ -787,59 +1138,42 @@ export default function Bounties() {
       })),
     })
     setSaving(false)
-
     if (error) { setToast('Error: ' + error); return }
-
-    setFTitle('')
-    setFReward('')
-    setFStart(new Date().toISOString().slice(0, 10))
-    setFEnd('')
-    setFConds([newCondRow()])
-    setShowCreate(false)
+    setFTitle(''); setFReward(''); setFStart(new Date().toISOString().slice(0, 10))
+    setFEnd(''); setFConds([newCondRow()]); setShowCreate(false)
     setToast('Bounty created!')
   }
 
-  const inputStyle: React.CSSProperties = {
-    padding: '10px 12px',
-    fontSize: 13,
-    borderRadius: 10,
-    background: B.surface2,
-    color: B.text,
-    border: 'none',
-    outline: 'none',
-    width: '100%',
+  const inp: React.CSSProperties = {
+    padding: '10px 12px', fontSize: 13, borderRadius: 10,
+    background: B.surface2, color: B.text, border: 'none', outline: 'none', width: '100%',
   }
 
   if (loading) return (
-    <div style={{ padding: 32, textAlign: 'center', color: B.textTer, fontSize: 14 }}>Loading bounties…</div>
+    <div style={{ padding: 40, textAlign: 'center', color: B.textTer, fontSize: 14 }}>Loading bounties…</div>
   )
 
   return (
     <div>
+      <style>{BOUNTY_CSS}</style>
       <WarnModal modal={warn} onClose={() => setWarn(null)} />
       {toast && <Toast msg={toast} onDone={() => setToast('')} />}
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
-          <div style={{ fontSize: 11, fontWeight: 800, color: B.yellow, letterSpacing: '0.14em', textTransform: 'uppercase' }}>
+          <div style={{ fontSize: 10, fontWeight: 800, color: B.yellow, letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: 3 }}>
             Admin · Phase 1
           </div>
-          <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.02em', marginTop: 2 }}>
-            Bounties
-          </div>
+          <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.03em' }}>Bounties</div>
         </div>
         <button
           onClick={() => setShowCreate(v => !v)}
           style={{
             background: showCreate ? B.surface2 : B.yellow,
             color: showCreate ? B.textSec : B.bg,
-            border: 'none',
-            borderRadius: 12,
-            padding: '10px 16px',
-            fontSize: 13,
-            fontWeight: 700,
-            cursor: 'pointer',
+            border: 'none', borderRadius: 12,
+            padding: '10px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer',
           }}
         >
           {showCreate ? 'Cancel' : '+ New Bounty'}
@@ -849,125 +1183,110 @@ export default function Bounties() {
       {/* Create form */}
       {showCreate && (
         <div style={{
-          background: B.surface,
-          border: `1px solid ${B.yellow}33`,
-          borderRadius: 16,
-          padding: 20,
-          marginBottom: 24,
+          background: B.surface, border: `1.5px solid ${B.yellow}28`,
+          borderRadius: 16, padding: 20, marginBottom: 24,
         }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: B.yellow, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: B.yellow, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 16 }}>
             New Bounty
           </div>
 
           <div style={{ marginBottom: 10 }}>
             <div style={{ fontSize: 11, color: B.textTer, fontWeight: 600, marginBottom: 5 }}>Title</div>
-            <input
-              placeholder="e.g. First to 500 sqft"
-              value={fTitle}
-              onChange={e => setFTitle(e.target.value)}
-              style={inputStyle}
-            />
+            <input placeholder="e.g. First to 500 sqft" value={fTitle} onChange={e => setFTitle(e.target.value)} style={inp} />
           </div>
 
           <div style={{ marginBottom: 10 }}>
             <div style={{ fontSize: 11, color: B.textTer, fontWeight: 600, marginBottom: 5 }}>Reward</div>
-            <input
-              placeholder="e.g. $100 bonus, Friday off"
-              value={fReward}
-              onChange={e => setFReward(e.target.value)}
-              style={inputStyle}
-            />
+            <input placeholder="e.g. $100 cash, Friday off" value={fReward} onChange={e => setFReward(e.target.value)} style={inp} />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
             <div>
               <div style={{ fontSize: 11, color: B.textTer, fontWeight: 600, marginBottom: 5 }}>Start Date</div>
-              <input
-                type="date"
-                value={fStart}
-                onChange={e => setFStart(e.target.value)}
-                style={{ ...inputStyle, colorScheme: 'dark' }}
-              />
+              <input type="date" value={fStart} onChange={e => setFStart(e.target.value)} style={{ ...inp, colorScheme: 'dark' }} />
             </div>
             <div>
               <div style={{ fontSize: 11, color: B.textTer, fontWeight: 600, marginBottom: 5 }}>End Date (optional)</div>
-              <input
-                type="date"
-                value={fEnd}
-                onChange={e => setFEnd(e.target.value)}
-                style={{ ...inputStyle, colorScheme: 'dark' }}
-              />
+              <input type="date" value={fEnd} onChange={e => setFEnd(e.target.value)} style={{ ...inp, colorScheme: 'dark' }} />
             </div>
           </div>
 
           {/* Condition builder */}
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 11, color: B.textTer, fontWeight: 600, marginBottom: 8 }}>
-              Conditions {fConds.length > 1 && <span style={{ color: B.purple }}>— Parlay</span>}
-            </div>
-            {fConds.map((c, idx) => (
-              <div key={c.id} style={{ display: 'flex', gap: 6, alignItems: 'flex-start', marginBottom: 6 }}>
-                <select
-                  value={c.type}
-                  onChange={e => setFConds(prev => prev.map((r, i) =>
-                    i === idx ? { ...r, type: e.target.value as ConditionType, valueStr: '' } : r
-                  ))}
-                  style={{
-                    ...inputStyle,
-                    width: 'auto',
-                    flex: 1,
-                    padding: '9px 10px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  {(Object.keys(COND_TYPE_LABELS) as ConditionType[]).map(t => (
-                    <option key={t} value={t}>{COND_TYPE_LABELS[t]}</option>
-                  ))}
-                </select>
-                {c.type === 'early_clock_in' ? (
-                  <input
-                    type="time"
-                    value={c.valueStr}
-                    onChange={e => setFConds(prev => prev.map((r, i) =>
-                      i === idx ? { ...r, valueStr: e.target.value } : r
-                    ))}
-                    style={{ ...inputStyle, width: 110, flex: 'none', colorScheme: 'dark' }}
-                  />
-                ) : (
-                  <input
-                    type="number"
-                    placeholder={c.type === 'sqft_total' ? '500' : c.type === 'panels' ? '10' : '25'}
-                    value={c.valueStr}
-                    onChange={e => setFConds(prev => prev.map((r, i) =>
-                      i === idx ? { ...r, valueStr: e.target.value } : r
-                    ))}
-                    style={{ ...inputStyle, width: 90, flex: 'none' }}
-                  />
-                )}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <div style={{ fontSize: 11, color: B.textTer, fontWeight: 600 }}>
+                Conditions
                 {fConds.length > 1 && (
-                  <button
-                    onClick={() => setFConds(prev => prev.filter((_, i) => i !== idx))}
-                    style={{ background: 'none', border: 'none', color: B.textTer, fontSize: 18, cursor: 'pointer', padding: '8px 4px', flexShrink: 0 }}
-                  >
-                    ×
-                  </button>
+                  <span style={{ marginLeft: 8, color: B.purple, fontWeight: 700 }}>— Parlay ({fConds.length} conditions)</span>
                 )}
               </div>
-            ))}
+            </div>
+
+            {fConds.map((c, idx) => {
+              const cfg = ALL_COND_CONFIG.find(x => x.type === c.type)
+              return (
+                <div key={c.id} style={{ marginBottom: 8 }}>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                    <select
+                      value={c.type}
+                      onChange={e => setFConds(prev => prev.map((r, i) =>
+                        i === idx ? { ...r, type: e.target.value as ConditionType, valueStr: '' } : r
+                      ))}
+                      style={{ ...inp, width: 'auto', flex: 1, padding: '9px 10px', cursor: 'pointer' }}
+                    >
+                      {COND_GROUPS.map(g => (
+                        <optgroup key={g.label} label={`— ${g.label} —`}>
+                          {g.types.map(t => (
+                            <option key={t.type} value={t.type}>{t.label}</option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+
+                    {c.type === 'early_clock_in' ? (
+                      <input
+                        type="time"
+                        value={c.valueStr}
+                        onChange={e => setFConds(prev => prev.map((r, i) =>
+                          i === idx ? { ...r, valueStr: e.target.value } : r
+                        ))}
+                        style={{ ...inp, width: 110, flex: 'none', colorScheme: 'dark' }}
+                      />
+                    ) : (
+                      <input
+                        type="number"
+                        placeholder={cfg?.placeholder ?? '0'}
+                        value={c.valueStr}
+                        onChange={e => setFConds(prev => prev.map((r, i) =>
+                          i === idx ? { ...r, valueStr: e.target.value } : r
+                        ))}
+                        style={{ ...inp, width: 88, flex: 'none' }}
+                      />
+                    )}
+
+                    {fConds.length > 1 && (
+                      <button
+                        onClick={() => setFConds(prev => prev.filter((_, i) => i !== idx))}
+                        style={{ background: 'none', border: 'none', color: B.textTer, fontSize: 18, cursor: 'pointer', padding: '8px 4px', flexShrink: 0 }}
+                      >×</button>
+                    )}
+                  </div>
+                  {cfg && (
+                    <div style={{ fontSize: 10, color: B.textTer, marginTop: 3, marginLeft: 2 }}>{cfg.help}</div>
+                  )}
+                </div>
+              )
+            })}
+
             <button
               onClick={() => setFConds(prev => [...prev, newCondRow()])}
               style={{
-                background: 'transparent',
-                border: `1px dashed ${B.border}`,
-                borderRadius: 8,
-                padding: '7px 12px',
-                fontSize: 12,
-                color: B.textTer,
-                cursor: 'pointer',
-                marginTop: 2,
+                background: 'transparent', border: `1px dashed ${B.border}`,
+                borderRadius: 8, padding: '7px 12px', fontSize: 12,
+                color: B.textTer, cursor: 'pointer', marginTop: 4, width: '100%',
               }}
             >
-              + Add condition (parlay)
+              + Add condition → turns into a Parlay
             </button>
           </div>
 
@@ -975,17 +1294,10 @@ export default function Bounties() {
             onClick={handleCreate}
             disabled={saving}
             style={{
-              width: '100%',
-              background: B.yellow,
-              color: B.bg,
-              border: 'none',
-              borderRadius: 12,
-              padding: 14,
-              fontSize: 15,
-              fontWeight: 800,
-              cursor: saving ? 'default' : 'pointer',
-              opacity: saving ? 0.7 : 1,
-              marginTop: 4,
+              width: '100%', background: B.yellow, color: B.bg,
+              border: 'none', borderRadius: 12, padding: 14,
+              fontSize: 15, fontWeight: 800,
+              cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1,
             }}
           >
             {saving ? 'Creating…' : 'Create Bounty'}
@@ -996,25 +1308,23 @@ export default function Bounties() {
       {/* Empty state */}
       {!activeBounties.length && !completedBounties.length && (
         <div style={{
-          textAlign: 'center',
-          padding: '48px 20px',
-          background: B.surface,
-          borderRadius: 20,
-          border: `1px solid ${B.border}`,
+          textAlign: 'center', padding: '52px 20px',
+          background: B.surface, borderRadius: 20, border: `1px solid ${B.border}`,
         }}>
-          <div style={{ fontSize: 36, marginBottom: 12 }}>◆</div>
+          <div style={{ fontSize: 32, marginBottom: 12, opacity: 0.4 }}>◆</div>
           <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>No bounties yet</div>
-          <div style={{ fontSize: 13, color: B.textTer }}>Create your first bounty to start tracking performance.</div>
+          <div style={{ fontSize: 13, color: B.textTer }}>Create a bounty to start tracking performance.</div>
         </div>
       )}
 
-      {/* Featured bounty (first active) */}
+      {/* Featured bounty */}
       {featured && (() => {
-        const board = boardsByBounty.get(featured.id) ?? []
+        const { board, facts } = boardsByBounty.get(featured.id) ?? { board: [], facts: [] }
         return (
           <FeaturedBountyCard
             bounty={featured}
             board={board}
+            facts={facts}
             isAdmin={isAdmin}
             onAward={ip => handleAward(featured, ip)}
             onToggle={() => handleToggle(featured)}
@@ -1027,18 +1337,17 @@ export default function Bounties() {
       {activeBounties.length > 1 && (
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-              Active Bounties
-            </div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Active</div>
             <div style={{ flex: 1, height: 1, background: B.border }} />
           </div>
           {activeBounties.slice(1).map(b => {
-            const board = boardsByBounty.get(b.id) ?? []
+            const { board, facts } = boardsByBounty.get(b.id) ?? { board: [], facts: [] }
             return (
               <ActiveBountyCard
                 key={b.id}
                 bounty={b}
                 board={board}
+                facts={facts}
                 isAdmin={isAdmin}
                 onAward={ip => handleAward(b, ip)}
                 onToggle={() => handleToggle(b)}
@@ -1049,17 +1358,17 @@ export default function Bounties() {
         </>
       )}
 
-      {/* Hall of fame */}
+      {/* Hall of Fame */}
       {completedBounties.length > 0 && (
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, marginTop: activeBounties.length ? 8 : 0 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-              Hall of Fame
-            </div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Hall of Fame</div>
             <div style={{ flex: 1, height: 1, background: B.border }} />
           </div>
           {completedBounties.map(b => {
-            const w = b.winner_installer_id ? installers.find(i => i.id === b.winner_installer_id) ?? null : null
+            const w = b.winner_installer_id
+              ? installers.find(i => i.id === b.winner_installer_id) ?? null
+              : null
             return <CompletedCard key={b.id} bounty={b} winner={w} />
           })}
         </>

@@ -80,7 +80,18 @@ export interface WarnConfig {
   onOk?: () => void
 }
 
-export type ConditionType = 'sqft_total' | 'panels' | 'sqft_per_hr' | 'early_clock_in'
+export type ConditionType =
+  | 'sqft_total'
+  | 'sqft_cc'
+  | 'panels'
+  | 'panels_cc'
+  | 'sqft_per_hr'
+  | 'total_hours'
+  | 'work_days'
+  | 'sqft_single_day'
+  | 'panels_single_day'
+  | 'best_sqft_hr_day'
+  | 'early_clock_in'
 
 export interface BountyCondition {
   id: string
