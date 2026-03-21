@@ -110,7 +110,7 @@ function condLabel(type: ConditionType, value: number, opt?: { social_action_typ
     case 'early_clock_in':   return `Clock in before ${minsToTime(value)}`
     case 'first_clock_in':   return `First to clock in ${value === 1 ? 'once' : value + ' days'}`
     case 'social_action':    return opt?.social_action_type === 'buy_coffee' ? 'Buy coffee for the crew ☕' : 'Buy lunch for the crew 🍔'
-    case 'projects_early':   return `${value} project${value !== 1 ? 's' : ''} finished before due date`
+    case 'panels_early':   return `${value} panel${value !== 1 ? 's' : ''} finished before project due date`
   }
 }
 
@@ -129,7 +129,7 @@ function condValueStr(type: ConditionType, value: number): string {
     case 'early_clock_in':    return value + (value === 1 ? ' early start' : ' early starts')
     case 'first_clock_in':    return value + (value === 1 ? ' first-in day' : ' first-in days')
     case 'social_action':     return 'committed'
-    case 'projects_early':    return value + (value === 1 ? ' project' : ' projects')
+    case 'panels_early':    return value + (value === 1 ? ' panel early' : ' panels early')
   }
 }
 
@@ -149,7 +149,7 @@ function condTargetStr(cond: BountyCondition): string {
     case 'early_clock_in':    return 'before ' + minsToTime(cond.value)
     case 'first_clock_in':    return cond.value + (cond.value === 1 ? ' day' : ' days')
     case 'social_action':     return cond.confirmed_by_installer_id ? '✓ committed' : 'pending'
-    case 'projects_early':    return String(cond.value) + (cond.value === 1 ? ' project' : ' projects')
+    case 'panels_early':    return String(cond.value) + (cond.value === 1 ? ' panel' : ' panels')
   }
 }
 
@@ -169,7 +169,7 @@ function condRemainingStr(type: ConditionType, remaining: number): string {
     case 'early_clock_in':    return 'clock in early once'
     case 'first_clock_in':    return `be first to clock in ${Math.ceil(remaining)} more day${Math.ceil(remaining) !== 1 ? 's' : ''}`
     case 'social_action':     return 'claim this commitment'
-    case 'projects_early':    return `${Math.ceil(remaining)} more project${Math.ceil(remaining) !== 1 ? 's' : ''} finished early`
+    case 'panels_early':    return `${Math.ceil(remaining)} more panel${Math.ceil(remaining) !== 1 ? 's' : ''} before due date`
   }
 }
 
@@ -250,9 +250,9 @@ function genNextMoves(bounty: Bounty, board: InstProg[]): string[] {
             moves.push(`${n}: clock in before ${minsToTime(cond.value)} to win`); break
           case 'social_action':
             moves.push(`${n}: claim the social commitment to win`); break
-          case 'projects_early': {
+          case 'panels_early': {
             const projRem = Math.ceil(cond.value - prog.value)
-            if (projRem > 0) moves.push(`${n}: finish ${projRem} more project${projRem !== 1 ? 's' : ''} before due date`); break
+            if (projRem > 0) moves.push(`${n}: ${projRem} more panel${projRem !== 1 ? 's' : ''} before due date to win`); break
           }
         }
       }
@@ -285,7 +285,7 @@ function genNextMoves(bounty: Bounty, board: InstProg[]): string[] {
           moves.push(`${n}: clock in early before ${ln} to catch up`); break
         case 'total_hours':
           moves.push(`${n}: ${(gap).toFixed(1)}h more than ${ln} to lead`); break
-        case 'social_action': case 'first_clock_in': case 'projects_early':
+        case 'social_action': case 'first_clock_in': case 'panels_early':
           break
       }
     }
@@ -337,9 +337,9 @@ function genMyNextMove(meId: string, bounty: Bounty, board: InstProg[]): string 
         return `Be first in ${Math.ceil(rem)} more day${Math.ceil(rem) !== 1 ? 's' : ''} to win`
       case 'social_action':
         return 'Claim the social commitment in the bounty details to win'
-      case 'projects_early': {
+      case 'panels_early': {
         const rem = Math.ceil(target - prog.value)
-        return rem > 0 ? `Finish ${rem} more project${rem !== 1 ? 's' : ''} before their due date to win` : null
+        return rem > 0 ? `Finish ${rem} more panel${rem !== 1 ? 's' : ''} before their project due date to win` : null
       }
     }
   } else {
@@ -368,9 +368,9 @@ function genMyNextMove(meId: string, bounty: Bounty, board: InstProg[]): string 
           return `You need ${Math.ceil(gap) + 1} more first-in days to pass ${ln}`
         case 'social_action':
           return `Claim the social commitment before ${ln} does`
-        case 'projects_early': {
+        case 'panels_early': {
           const projGap = Math.ceil(gap) + 1
-          return `Finish ${projGap} more project${projGap !== 1 ? 's' : ''} early to take the lead`
+          return `Finish ${projGap} more panel${projGap !== 1 ? 's' : ''} before due date to take the lead`
         }
       }
     } else if (rem > 0) {
@@ -540,20 +540,17 @@ function calcInstProg(
         break
       }
 
-      case 'projects_early': {
+      case 'panels_early': {
+        // Count each panel this installer personally finished before the project's due date.
+        // Team projects are fair: you only get credit for panels YOU completed early.
         if (projects) {
           const projectMap = new Map(projects.map(p => [p.id, p]))
-          const byProject = new Map<string, string>() // project_id → latest finish_ts
           for (const r of inRange) {
             if (!r.project_id || !r.finish_ts) continue
-            const cur = byProject.get(r.project_id)
-            if (!cur || r.finish_ts > cur) byProject.set(r.project_id, r.finish_ts)
-          }
-          for (const [projectId, lastFinish] of byProject) {
-            const proj = projectMap.get(projectId)
+            const proj = projectMap.get(r.project_id)
             if (!proj?.due_date) continue
             const dueMs    = new Date(proj.due_date + 'T23:59:59').getTime()
-            const finishMs = new Date(lastFinish).getTime()
+            const finishMs = new Date(r.finish_ts).getTime()
             if (finishMs < dueMs) value++
           }
         }
@@ -1875,7 +1872,7 @@ function BountyDetailModal({
     early_clock_in:   (v) => `Must clock in before ${minsToTime(v)} on at least one day`,
     first_clock_in:   () => 'Be the earliest installer to clock in on any given day',
     social_action:    () => 'Public commitment — first to claim and lock it in gets credit for this leg',
-    projects_early:   () => 'Projects where all your panels were finished before the due date',
+    panels_early:   () => 'Each panel you personally finished before its project due date counts — team projects are fair since you only get credit for your own work',
   }
 
   return (
@@ -2290,7 +2287,7 @@ const COND_GROUPS: { label: string; types: { type: ConditionType; label: string;
   {
     label: 'Early Finish',
     types: [
-      { type: 'projects_early', label: 'Projects Finished Before Due Date', placeholder: '3', help: 'Projects where all your panels were done before the due date' },
+      { type: 'panels_early', label: 'Panels Finished Before Due Date', placeholder: '10', help: 'Panels you personally completed before the project due date — fair for team jobs' },
     ],
   },
   {

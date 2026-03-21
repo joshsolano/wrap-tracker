@@ -94,7 +94,7 @@ export type ConditionType =
   | 'early_clock_in'
   | 'first_clock_in'
   | 'social_action'
-  | 'projects_early'
+  | 'panels_early'
 
 export interface BountyCondition {
   id: string
