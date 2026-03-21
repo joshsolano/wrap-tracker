@@ -1457,17 +1457,32 @@ function generateDemoBounties(installers: Installer[]): Array<{
     [c, [{ value: 2, pct: 0.40, done: false }]],
   ])
 
-  // 5. The Big Month — completed with winner
+  // 5. The Big Month — completed, unpaid
   const db5: Bounty & { conditions: BountyCondition[] } = {
     id: 'demo-5', title: 'The Big Month', reward: '$200 cash',
     start_date: d(-35), end_date: d(-5), active: false,
-    winner_installer_id: a.id, paid: false, paid_at: null, created_at: '',
+    winner_installer_id: a?.id ?? null, paid: false, paid_at: null, created_at: '',
     conditions: [mkCond('demo-5', 1, 'sqft_total', 1200)],
   }
   const bb5 = mkBoard([
     [a, [{ value: 1248, pct: 1.04, done: true }]],
     [b, [{ value: 744,  pct: 0.62, done: false }]],
     [c, [{ value: 456,  pct: 0.38, done: false }]],
+  ])
+
+  // 5b. Speed Week — completed, already paid
+  const db5b: Bounty & { conditions: BountyCondition[] } = {
+    id: 'demo-5b', title: 'Speed Week', reward: '$75 cash',
+    start_date: d(-60), end_date: d(-30), active: false,
+    winner_installer_id: b?.id ?? null, paid: true,
+    paid_at: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000).toISOString(),
+    created_at: '',
+    conditions: [mkCond('demo-5b', 1, 'sqft_per_hr', 28)],
+  }
+  const bb5b = mkBoard([
+    [b, [{ value: 31.2, pct: 1.11, done: true }]],
+    [a, [{ value: 26.4, pct: 0.94, done: false }]],
+    [c, [{ value: 19.8, pct: 0.71, done: false }]],
   ])
 
   // 6. Hustle Parlay — sqft volume + efficiency
@@ -1489,6 +1504,7 @@ function generateDemoBounties(installers: Installer[]): Array<{
     { bounty: db3, board: bb3 },
     { bounty: db4, board: bb4 },
     { bounty: db5, board: bb5 },
+    { bounty: db5b, board: bb5b },
     { bounty: db6, board: bb6 },
   ]
   return all.map(e => ({
