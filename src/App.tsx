@@ -9,14 +9,15 @@ import Dashboard from './components/tabs/Dashboard'
 import LogTab from './components/tabs/Log'
 import Projects from './components/tabs/Projects'
 import Leaderboard from './components/tabs/Leaderboard'
+import Bounties from './components/tabs/Bounties'
 import Profiles from './components/tabs/Profiles'
 import Panels from './components/tabs/Panels'
 import Settings from './components/tabs/Settings'
 import { Redacted } from './components/ui/Redacted'
 import { B, isBirthday } from './lib/utils'
 
-const TABS = ['Clock In', 'Dashboard', 'Log', 'Projects', 'Leaderboard', 'Profiles', 'Panels', 'Settings'] as const
-type Tab = typeof TABS[number]
+const ALL_TABS = ['Clock In', 'Dashboard', 'Log', 'Projects', 'Leaderboard', 'Bounties', 'Profiles', 'Panels', 'Settings'] as const
+type Tab = typeof ALL_TABS[number]
 
 function AppShell() {
   const { signOut, installer: me, isAdmin, isGuest } = useAuth()
@@ -45,12 +46,17 @@ function AppShell() {
   const birthday = installers.find(i => isBirthday(i.birthday))
   const activeCount = activeJobs.length
 
+  const tabs: Tab[] = isAdmin
+    ? [...ALL_TABS]
+    : ALL_TABS.filter(t => t !== 'Bounties')
+
   const tabContent: Record<Tab, React.ReactElement> = {
     'Clock In': <ClockIn />,
     Dashboard: <Dashboard />,
     Log: <LogTab />,
     Projects: <Projects />,
     Leaderboard: <Leaderboard />,
+    Bounties: <Bounties />,
     Profiles: <Profiles />,
     Panels: <Panels />,
     Settings: <Settings onSignOut={signOut} />,
@@ -194,7 +200,7 @@ function AppShell() {
 
         <div style={{ padding: '14px 20px 0' }}>
           <div style={{ display: 'flex', flexWrap: isMobile ? 'wrap' : 'nowrap', gap: 3, background: B.surface, borderRadius: 14, padding: 4 }}>
-            {TABS.map(t => (
+            {tabs.map(t => (
               <button
                 key={t}
                 onClick={() => switchTab(t)}

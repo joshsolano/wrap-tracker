@@ -80,6 +80,29 @@ export interface WarnConfig {
   onOk?: () => void
 }
 
+export type ConditionType = 'sqft_total' | 'panels' | 'sqft_per_hr' | 'early_clock_in'
+
+export interface BountyCondition {
+  id: string
+  bounty_id: string
+  condition_type: ConditionType
+  operator: string
+  value: number
+  created_at: string
+}
+
+export interface Bounty {
+  id: string
+  title: string
+  reward: string
+  start_date: string
+  end_date: string | null
+  active: boolean
+  winner_installer_id: string | null
+  created_at: string
+  conditions?: BountyCondition[]
+}
+
 export interface InstallerStats {
   installer: Installer
   panels: number
