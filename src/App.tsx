@@ -5,6 +5,7 @@ import { ErrorBoundary } from './components/ui/ErrorBoundary'
 import { ConnectionBanner } from './components/ui/ConnectionBanner'
 import LoginScreen from './components/auth/LoginScreen'
 import ContentShell from './components/content/ContentShell'
+import ContentDashboard from './components/content/ContentDashboard'
 import ClockIn from './components/tabs/ClockIn'
 import Dashboard from './components/tabs/Dashboard'
 import LogTab from './components/tabs/Log'
@@ -18,7 +19,7 @@ import { Redacted } from './components/ui/Redacted'
 import { B, isBirthday } from './lib/utils'
 import { useDemoFeatures } from './hooks/useDemoFeatures'
 
-const ALL_TABS = ['Clock In', 'Dashboard', 'Log', 'Projects', 'Leaderboard', 'Bounties', 'Profiles', 'Panels', 'Settings'] as const
+const ALL_TABS = ['Clock In', 'Dashboard', 'Log', 'Projects', 'Leaderboard', 'Bounties', 'Profiles', 'Panels', 'Content', 'Settings'] as const
 type Tab = typeof ALL_TABS[number]
 
 function AppShell() {
@@ -50,7 +51,7 @@ function AppShell() {
   const birthday = installers.find(i => isBirthday(i.birthday))
   const activeCount = activeJobs.length
 
-  const tabs: Tab[] = [...ALL_TABS]
+  const tabs: Tab[] = ALL_TABS.filter(t => t !== 'Content' || isAdmin)
 
   const tabContent: Record<Tab, React.ReactElement> = {
     'Clock In': <ClockIn />,
@@ -61,6 +62,7 @@ function AppShell() {
     Bounties: <Bounties />,
     Profiles: <Profiles />,
     Panels: <Panels />,
+    Content: <ContentDashboard />,
     Settings: <Settings onSignOut={signOut} />,
   }
 
