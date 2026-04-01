@@ -30,12 +30,28 @@ function ProfilesList({ onSelect }: { onSelect: (id: string) => void }) {
     return m
   }, [completeLogs, installers])
 
+  const shopAvg = useMemo(() => {
+    const comLogs = completeLogs.filter(r => !r.is_color_change)
+    const totalSqft = comLogs.reduce((s, r) => s + (r.sqft ?? 0), 0)
+    const totalMins = comLogs.reduce((s, r) => s + (r.mins ?? 0), 0)
+    return totalMins > 0 ? totalSqft / (totalMins / 60) : null
+  }, [completeLogs])
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {shopAvg && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: B.surface, borderRadius: 12, padding: '10px 16px', border: `1px solid ${B.border}`, marginBottom: 4 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Shop avg sqft/hr</span>
+          <span style={{ fontSize: 16, fontWeight: 800, color: B.yellow }}>{shopAvg.toFixed(1)}</span>
+        </div>
+      )}
       {installers.map((inst, i) => {
         const stats = boardSummary.get(inst.id) ?? { sqft: 0, panels: 0, mins: 0, rates: [] }
         const avgSqftHr = stats.rates.length ? stats.rates.reduce((a, b) => a + b, 0) / stats.rates.length : null
         const isBday = isBirthday(inst.birthday)
+        const delta = avgSqftHr && shopAvg ? avgSqftHr - shopAvg : null
+        const isAbove = delta !== null && delta > 0
+        const isBelow = delta !== null && delta < 0
         return (
           <button key={inst.id} onClick={() => onSelect(inst.id)}
             style={{ background: B.surface, borderRadius: 16, padding: '16px 18px', border: `1.5px solid ${isBday ? B.yellow + '88' : i === 0 ? inst.color + '44' : B.border}`, display: 'flex', alignItems: 'center', gap: 14, cursor: 'pointer', textAlign: 'left', position: 'relative', overflow: 'hidden', width: '100%', color: B.text }}>
@@ -47,10 +63,19 @@ function ProfilesList({ onSelect }: { onSelect: (id: string) => void }) {
                   {isGuest ? <Redacted>{inst.name}</Redacted> : inst.name}
                   {isBday ? ' 🎂' : ''}
                 </div>
-                <div style={{ display: 'flex', gap: 12, marginTop: 4 }}>
+                <div style={{ display: 'flex', gap: 12, marginTop: 4, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 12, color: B.textTer }}>{stats.sqft.toFixed(1)} sqft</span>
                   <span style={{ fontSize: 12, color: B.textTer }}>{stats.panels} panels</span>
-                  {avgSqftHr && <span style={{ fontSize: 12, color: avgSqftHr > 20 ? B.green : B.textTer }}>{avgSqftHr.toFixed(1)}/hr</span>}
+                  {avgSqftHr && (
+                    <span style={{ fontSize: 12, color: isAbove ? B.green : isBelow ? B.red : B.textTer }}>
+                      {avgSqftHr.toFixed(1)}/hr
+                      {delta !== null && (
+                        <span style={{ fontSize: 11, marginLeft: 3, opacity: 0.85 }}>
+                          ({isAbove ? '+' : ''}{delta.toFixed(1)} vs avg)
+                        </span>
+                      )}
+                    </span>
+                  )}
                 </div>
               </div>
               <div style={{ fontSize: 12, color: B.textTer, flexShrink: 0 }}>View →</div>
