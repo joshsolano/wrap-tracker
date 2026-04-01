@@ -2,10 +2,10 @@ import { useMemo } from 'react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import { useAppData } from '../../context/AppDataContext'
 import { useAuth } from '../../context/AuthContext'
-import { B, weekKey } from '../../lib/utils'
+import { B, weekKey, calcSqft } from '../../lib/utils'
 
 export default function Dashboard() {
-  const { logs, installers } = useAppData()
+  const { logs, installers, projects } = useAppData()
   const { isGuest } = useAuth()
 
   const completeLogs = useMemo(
@@ -72,6 +72,19 @@ export default function Dashboard() {
     if (prev === 0) return null
     return ((current - prev) / prev) * 100
   }
+
+  // Pipeline — projects loaded this week vs last week
+  const thisWeekKey = weekKey(now.toISOString())
+  const lastWeekKey = useMemo(() => { const lw = new Date(now); lw.setDate(lw.getDate() - 7); return weekKey(lw.toISOString()) }, [])
+
+  function projectPanelSqft(p: typeof projects[number]) {
+    return (p.panels ?? []).reduce((s, pnl) => s + (calcSqft(pnl.height_in, pnl.width_in) ?? 0), 0)
+  }
+
+  const thisWeekProjects = useMemo(() => projects.filter(p => !p.archived && weekKey(p.created_at) === thisWeekKey), [projects, thisWeekKey])
+  const lastWeekProjects = useMemo(() => projects.filter(p => !p.archived && weekKey(p.created_at) === lastWeekKey), [projects, lastWeekKey])
+  const thisWeekLoadedSqft = useMemo(() => thisWeekProjects.reduce((s, p) => s + projectPanelSqft(p), 0), [thisWeekProjects])
+  const lastWeekLoadedSqft = useMemo(() => lastWeekProjects.reduce((s, p) => s + projectPanelSqft(p), 0), [lastWeekProjects])
 
   const byInstaller = useMemo(() => {
     const m = new Map<string, { sqft: number; name: string; color: string }>()
@@ -240,9 +253,15 @@ export default function Dashboard() {
       </div>
 
       <Label text="This week (commercial)" />
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
         <StatCard label="SQFT This Week" value={weekSqft.toFixed(1)} color={B.yellow} delta={pct(weekSqft, lastWeekSqft)} />
         <StatCard label="Panels This Week" value={weekPanels} delta={pct(weekPanels, lastWeekPanels)} />
+      </div>
+
+      <Label text="Pipeline this week" />
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
+        <StatCard label="Projects Loaded" value={thisWeekProjects.length} color={B.blue} delta={pct(thisWeekProjects.length, lastWeekProjects.length)} sub="new this week" />
+        <StatCard label="SQFT Loaded" value={thisWeekLoadedSqft.toFixed(1)} color={B.blue} delta={pct(thisWeekLoadedSqft, lastWeekLoadedSqft)} sub="from panel dims" />
       </div>
 
       <ChartCard title="This Week — Daily SQFT">
