@@ -8,7 +8,7 @@ import { B, CC, calcSqft, fmtDate, fmtDue, fmtTime, daysUntil } from '../../lib/
 import type { WarnConfig, Project, Panel } from '../../lib/types'
 
 export default function Projects() {
-  const { projects, logs, activeJobs, installers, updateProject, updateProjectType, updateDueDate, archiveProject, clockIn } = useAppData()
+  const { projects, logs, allLogs, activeJobs, installers, updateProject, updateProjectType, updateDueDate, archiveProject, clockIn, voidLog, insertManualLog } = useAppData()
   const { isAdmin, isGuest, installer: me } = useAuth()
   const [expanded, setExpanded] = useState<string | null>(null)
   const [editingDue, setEditingDue] = useState<string | null>(null)
@@ -20,13 +20,20 @@ export default function Projects() {
   const [toast, setToast] = useState('')
   const [quickBusy, setQuickBusy] = useState(false)
 
+  // "Add & Void" state for incomplete panels
+  const [addVoid, setAddVoid] = useState<{ panelId: string; panelName: string; projId: string; isCC: boolean } | null>(null)
+  const [avInstallerId, setAvInstallerId] = useState<string | null>(null)
+  const [avDate, setAvDate] = useState(new Date().toISOString().slice(0, 10))
+  const [avBusy, setAvBusy] = useState(false)
+
   const projectsData = useMemo(() => {
     return projects.map(p => {
       const pnls = p.panels ?? []
       const total = pnls.length
       const ajForProj = activeJobs.filter(j => j.project_id === p.id)
+      // allLogs so voided entries still count the panel as done for project completion
       const donePanelIds = new Set(
-        logs.filter(r => r.project_id === p.id && r.status === 'Complete' && r.panel_id).map(r => r.panel_id!)
+        allLogs.filter(r => r.project_id === p.id && r.status === 'Complete' && r.panel_id).map(r => r.panel_id!)
       )
       const doneCount = pnls.filter(pnl => donePanelIds.has(pnl.id)).length
       const inProgressPanelIds = new Set(ajForProj.map(j => j.panel_id))
@@ -60,7 +67,10 @@ export default function Projects() {
         if (s != null) { panelSqftSum += s; panelSqftHasAny = true }
       }
       const totalPanelSqft = panelSqftHasAny ? panelSqftSum : null
-      return { p, pnls, total, doneCount, donePanelIds, inProgressPanelIds, remaining, workedBy, lastTs, daysSince, due, daysLeft, pct, isComplete, statusColor, statusLabel, onTimeBadge, completionTs, ajForProj, totalPanelSqft }
+      const totalMins = logs
+        .filter(r => r.project_id === p.id && r.status === 'Complete')
+        .reduce((s, r) => s + (r.mins ?? 0), 0)
+      return { p, pnls, total, doneCount, donePanelIds, inProgressPanelIds, remaining, workedBy, lastTs, daysSince, due, daysLeft, pct, isComplete, statusColor, statusLabel, onTimeBadge, completionTs, ajForProj, totalPanelSqft, totalMins }
     }).sort((a, b) => {
       if (a.isComplete && !b.isComplete) return 1
       if (!a.isComplete && b.isComplete) return -1
@@ -145,10 +155,69 @@ export default function Projects() {
     setEditingName(null)
   }
 
+  async function handleAddVoid() {
+    if (!addVoid || !avInstallerId) return
+    setAvBusy(true)
+    const startTs = new Date(`${avDate}T09:00:00`)
+    const finishTs = new Date(`${avDate}T09:01:00`)
+    const { error } = await insertManualLog({
+      installerId: avInstallerId,
+      projectId: addVoid.projId,
+      panelId: addVoid.panelId,
+      jobType: 'Wrap',
+      isColorChange: addVoid.isCC,
+      startTs,
+      finishTs,
+    })
+    if (error) { setAvBusy(false); setToast('Error: ' + error); return }
+    // Find the newly created log and void it
+    const { data } = await (await import('../../lib/supabase')).supabase
+      .from('logs')
+      .select('id')
+      .eq('panel_id', addVoid.panelId)
+      .eq('installer_id', avInstallerId)
+      .eq('project_id', addVoid.projId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+    if (data?.id) await voidLog(data.id, true)
+    setAvBusy(false)
+    setAddVoid(null)
+    setToast(`${addVoid.panelName} marked done (voided)`)
+  }
+
   return (
     <div>
       <WarnModal modal={warn} onClose={() => setWarn(null)} />
       {toast && <Toast msg={toast} onDone={() => setToast('')} />}
+
+      {addVoid && (
+        <div style={{ position:'fixed',top:0,left:0,width:'100%',height:'100%',zIndex:999,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,0.82)',padding:20 }}>
+          <div style={{ background:B.surface,borderRadius:20,padding:24,width:'100%',maxWidth:380,border:`1px solid ${B.border}` }}>
+            <div style={{ fontSize:16,fontWeight:800,marginBottom:4 }}>Add & Void — {addVoid.panelName}</div>
+            <div style={{ fontSize:12,color:B.textTer,marginBottom:18 }}>Creates a log entry for this panel and immediately voids it. Panel closes out without affecting leaderboard stats.</div>
+            <div style={{ fontSize:12,color:B.textSec,fontWeight:600,marginBottom:8 }}>Assign to installer</div>
+            <div style={{ display:'flex',gap:8,flexWrap:'wrap',marginBottom:16 }}>
+              {installers.map(i => (
+                <button key={i.id} onClick={() => setAvInstallerId(i.id)}
+                  style={{ padding:'7px 13px',borderRadius:20,border:`1.5px solid ${avInstallerId===i.id?i.color:B.border}`,background:avInstallerId===i.id?i.color+'18':'transparent',color:avInstallerId===i.id?i.color:B.textSec,fontWeight:avInstallerId===i.id?700:400,fontSize:13,cursor:'pointer' }}>
+                  {i.name.split(' ')[0]}
+                </button>
+              ))}
+            </div>
+            <div style={{ fontSize:12,color:B.textSec,fontWeight:600,marginBottom:6 }}>Date</div>
+            <input type="date" value={avDate} onChange={e => setAvDate(e.target.value)} max={new Date().toISOString().slice(0,10)}
+              style={{ padding:'10px 8px',fontSize:13,borderRadius:10,background:B.surface2,color:B.text,border:'none',outline:'none',width:'100%',colorScheme:'dark',marginBottom:18 }} />
+            <div style={{ display:'flex',gap:10 }}>
+              <button onClick={() => setAddVoid(null)} style={{ flex:1,background:B.surface2,color:B.text,border:'none',borderRadius:12,padding:13,fontSize:14,fontWeight:600,cursor:'pointer' }}>Cancel</button>
+              <button onClick={handleAddVoid} disabled={!avInstallerId||avBusy}
+                style={{ flex:1,background:B.red+'cc',color:'#fff',border:'none',borderRadius:12,padding:13,fontSize:14,fontWeight:800,cursor:!avInstallerId||avBusy?'default':'pointer',opacity:!avInstallerId||avBusy?0.6:1 }}>
+                {avBusy ? 'Saving…' : 'Add & Void'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div style={{ display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:20 }}>
         {[{ l:'Overdue',v:overdueCount,c:B.red },{ l:'Due Soon',v:dueSoonCount,c:B.orange },{ l:'At Risk',v:atRiskCount,c:B.yellow },{ l:'Complete',v:completedCount,c:B.green }].map(m => (
@@ -160,7 +229,7 @@ export default function Projects() {
       </div>
 
       <div style={{ display:'flex',flexDirection:'column',gap:10 }}>
-        {visible.map(({ p, pnls, doneCount, donePanelIds, inProgressPanelIds, remaining, workedBy, daysLeft, pct, isComplete, statusColor, statusLabel, onTimeBadge, completionTs, ajForProj, totalPanelSqft }) => {
+        {visible.map(({ p, pnls, doneCount, donePanelIds, inProgressPanelIds, remaining, workedBy, daysLeft, pct, isComplete, statusColor, statusLabel, onTimeBadge, completionTs, ajForProj, totalPanelSqft, totalMins }) => {
           const isExp = expanded === p.id
           const pc = isComplete ? B.green : statusColor
           const isCC = p.project_type === 'colorchange'
@@ -190,7 +259,8 @@ export default function Projects() {
                     </div>
                     <div style={{ display:'flex',alignItems:'center',gap:12,flexWrap:'wrap' }}>
                       <span style={{ fontSize:12,color:B.textSec,fontWeight:600 }}><span style={{ color:B.text }}>{doneCount}</span>/{pnls.length} panels{ajForProj.length > 0 && <span style={{ color:B.orange }}> + {ajForProj.length} active</span>}</span>
-                      {totalPanelSqft != null && <span style={{ fontSize:12,color:B.textTer }}>{totalPanelSqft.toFixed(1)} sqft total</span>}
+                      {totalPanelSqft != null && <span style={{ fontSize:12,color:B.textTer }}>{totalPanelSqft.toFixed(1)} sqft</span>}
+                      {totalMins > 0 && <span style={{ fontSize:12,color:B.textTer }}>{(totalMins/60).toFixed(1)}h total</span>}
                     </div>
                   </div>
                   <div style={{ flexShrink:0,textAlign:'right' }}>
@@ -241,31 +311,47 @@ export default function Projects() {
                   </div>
 
                   <div style={{ display:'flex',flexDirection:'column',gap:4 }}>
-                    {pnls.map(panel => {
+                    {[...pnls].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })).map(panel => {
                       const isDone = donePanelIds.has(panel.id)
                       const isIP = inProgressPanelIds.has(panel.id)
                       const aj = ajForProj.find(j => j.panel_id === panel.id)
                       const ipInst = aj ? installers.find(i => i.id === aj.installer_id) : null
-                      const plog = logs.filter(r => r.panel_id === panel.id && r.project_id === p.id && r.status === 'Complete').sort((a, b) => new Date(b.finish_ts).getTime() - new Date(a.finish_ts).getTime())[0]
+                      const plog = allLogs.filter(r => r.panel_id === panel.id && r.project_id === p.id && r.status === 'Complete').sort((a, b) => new Date(b.finish_ts).getTime() - new Date(a.finish_ts).getTime())[0]
+                      const isVoided = !!plog?.voided
                       const worker = plog?.installer ?? null
                       return (
-                        <div key={panel.id} style={{ display:'flex',alignItems:'center',gap:10,padding:'9px 12px',background: isDone ? B.green+'0D' : isIP ? B.orange+'0D' : B.surface2,borderRadius:9,border:`1px solid ${isDone ? B.green+'33' : isIP ? B.orange+'33' : 'transparent'}` }}>
-                          <div style={{ width:18,height:18,borderRadius:'50%',background: isDone ? B.green : isIP ? B.orange : B.surface3,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:10,color:(isDone||isIP)?B.bg:B.textTer,fontWeight:800 }}>
+                        <div key={panel.id} style={{ display:'flex',alignItems:'center',gap:10,padding:'9px 12px',background: isDone ? (isVoided ? B.surface2 : B.green+'0D') : isIP ? B.orange+'0D' : B.surface2,borderRadius:9,border:`1px solid ${isDone ? (isVoided ? B.border : B.green+'33') : isIP ? B.orange+'33' : 'transparent'}`,opacity:isVoided?0.6:1 }}>
+                          <div style={{ width:18,height:18,borderRadius:'50%',background: isDone ? (isVoided ? B.textTer : B.green) : isIP ? B.orange : B.surface3,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:10,color:(isDone||isIP)?B.bg:B.textTer,fontWeight:800 }}>
                             {isDone ? '✓' : isIP ? '…' : ''}
                           </div>
                           <div style={{ flex:1,minWidth:0 }}>
-                            <div style={{ fontSize:13,fontWeight:isDone||isIP?600:400,color: isDone ? B.text : isIP ? B.orange : B.textSec }}>{panel.name}</div>
-                            {isDone && plog && <div style={{ fontSize:11,color:B.textTer,marginTop:1 }}>{fmtDate(plog.finish_ts)}{worker ? ' · ' + worker.name.split(' ')[0] : ''}</div>}
+                            <div style={{ fontSize:13,fontWeight:isDone||isIP?600:400,color: isDone ? B.text : isIP ? B.orange : B.textSec,textDecoration:isVoided?'line-through':'none' }}>{panel.name}</div>
+                            {isDone && plog && <div style={{ fontSize:11,color:isVoided?B.red:B.textTer,marginTop:1 }}>{isVoided && 'VOIDED · '}{fmtDate(plog.finish_ts)}{worker ? ' · ' + worker.name.split(' ')[0] : ''}</div>}
                             {isIP && <div style={{ fontSize:11,color:B.orange,marginTop:1 }}>In progress{ipInst ? ' — ' + ipInst.name.split(' ')[0] : ''}</div>}
                           </div>
                           {panel.height_in && panel.width_in && <div style={{ fontSize:11,color:B.textTer,flexShrink:0 }}>{panel.height_in}"×{panel.width_in}"</div>}
+                          {isAdmin && isDone && plog && !isVoided && (
+                            <button onClick={() => { voidLog(plog.id, true); setToast(`${panel.name} voided`) }}
+                              style={{ fontSize:11,color:B.textTer,background:'transparent',border:`1px solid ${B.border}`,borderRadius:8,padding:'4px 9px',cursor:'pointer',fontWeight:600,flexShrink:0,whiteSpace:'nowrap' }}>
+                              Void
+                            </button>
+                          )}
+                          {isAdmin && isDone && plog && isVoided && (
+                            <button onClick={() => { voidLog(plog.id, false); setToast(`${panel.name} restored`) }}
+                              style={{ fontSize:11,color:B.red,background:B.red+'11',border:`1px solid ${B.red+'44'}`,borderRadius:8,padding:'4px 9px',cursor:'pointer',fontWeight:700,flexShrink:0,whiteSpace:'nowrap' }}>
+                              Unvoid
+                            </button>
+                          )}
                           {!isGuest && !isDone && !isIP && (
-                            <button
-                              onClick={() => handleQuickClockIn(panel, p)}
-                              disabled={quickBusy}
-                              style={{ fontSize:11,color:isCC?CC:B.yellow,background:'transparent',border:`1px solid ${isCC?CC+'66':B.yellow+'66'}`,borderRadius:8,padding:'4px 9px',cursor:quickBusy?'default':'pointer',fontWeight:700,flexShrink:0,whiteSpace:'nowrap',opacity:quickBusy?0.5:1 }}
-                            >
+                            <button onClick={() => handleQuickClockIn(panel, p)} disabled={quickBusy}
+                              style={{ fontSize:11,color:isCC?CC:B.yellow,background:'transparent',border:`1px solid ${isCC?CC+'66':B.yellow+'66'}`,borderRadius:8,padding:'4px 9px',cursor:quickBusy?'default':'pointer',fontWeight:700,flexShrink:0,whiteSpace:'nowrap',opacity:quickBusy?0.5:1 }}>
                               Clock In
+                            </button>
+                          )}
+                          {isAdmin && !isDone && !isIP && (
+                            <button onClick={() => { setAddVoid({ panelId: panel.id, panelName: panel.name, projId: p.id, isCC }); setAvInstallerId(null); setAvDate(new Date().toISOString().slice(0, 10)) }}
+                              style={{ fontSize:11,color:B.textTer,background:'transparent',border:`1px solid ${B.border}`,borderRadius:8,padding:'4px 9px',cursor:'pointer',fontWeight:600,flexShrink:0,whiteSpace:'nowrap' }}>
+                              Add & Void
                             </button>
                           )}
                         </div>

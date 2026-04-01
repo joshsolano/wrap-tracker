@@ -35,6 +35,13 @@ export interface Panel {
   created_at: string
 }
 
+export interface Manager {
+  id: string
+  user_id: string | null
+  name: string
+  created_at: string
+}
+
 export interface ActiveJob {
   id: string
   installer_id: string
@@ -43,6 +50,7 @@ export interface ActiveJob {
   job_type: JobType
   is_color_change: boolean
   start_ts: string
+  paused_at: string | null
   installer?: Installer
   project?: Project
   panel?: Panel
@@ -63,6 +71,7 @@ export interface Log {
   start_ts: string
   finish_ts: string
   status: string
+  voided: boolean
   created_at: string
   // computed
   installer?: Installer | null
@@ -95,6 +104,7 @@ export type ConditionType =
   | 'first_clock_in'
   | 'social_action'
   | 'panels_early'
+  | 'no_voided_panels'
 
 export interface BountyCondition {
   id: string

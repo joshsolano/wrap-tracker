@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import type { ActiveJob } from '../lib/types'
 
@@ -8,9 +8,7 @@ export function useActiveJobs() {
   const [activeJobs, setActiveJobs] = useState<ActiveJob[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
 
-  // Full fetch — only used on mount and reconnect
   const fetch = useCallback(async () => {
     const { data, error: err } = await supabase
       .from('active_jobs')
@@ -21,59 +19,7 @@ export function useActiveJobs() {
     setLoading(false)
   }, [])
 
-  useEffect(() => {
-    fetch()
-
-    channelRef.current = supabase
-      .channel('active_jobs_changes')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'active_jobs' },
-        async (payload) => {
-          const { data } = await supabase
-            .from('active_jobs')
-            .select(ACTIVE_JOBS_SELECT)
-            .eq('id', payload.new.id)
-            .single()
-          if (data) {
-            setActiveJobs(prev => {
-              if (prev.find(j => j.id === data.id)) return prev
-              return [...prev, data as ActiveJob]
-            })
-          }
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'active_jobs' },
-        async (payload) => {
-          const { data } = await supabase
-            .from('active_jobs')
-            .select(ACTIVE_JOBS_SELECT)
-            .eq('id', payload.new.id)
-            .single()
-          if (data) {
-            setActiveJobs(prev => prev.map(j => j.id === data.id ? data as ActiveJob : j))
-          }
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'DELETE', schema: 'public', table: 'active_jobs' },
-        (payload) => {
-          setActiveJobs(prev => prev.filter(j => j.id !== payload.old.id))
-        }
-      )
-      .subscribe((status) => {
-        if (status === 'CHANNEL_ERROR' || status === 'CLOSED') {
-          setTimeout(fetch, 2000)
-        }
-      })
-
-    return () => {
-      if (channelRef.current) supabase.removeChannel(channelRef.current)
-    }
-  }, [fetch])
+  useEffect(() => { fetch() }, [fetch])
 
   async function clockIn(params: {
     installerId: string
@@ -139,9 +85,11 @@ export function useActiveJobs() {
       return { celebrated: false, error: null }
     }
 
+    // If paused, finish at the pause time so pause duration isn't counted
+    const finishTs = job.paused_at ?? new Date().toISOString()
     const { error: err } = await supabase.rpc('clock_out', {
       p_installer_id: installerId,
-      p_finish_ts:    new Date().toISOString(),
+      p_finish_ts:    finishTs,
     })
     if (err) return { celebrated: false, error: err.message }
 
@@ -168,5 +116,42 @@ export function useActiveJobs() {
     return { error: null }
   }
 
-  return { activeJobs, loading, error, fetch, clockIn, clockOut, discardSession }
+  async function pauseJob(installerId: string): Promise<{ error: string | null }> {
+    const now = new Date().toISOString()
+    const { error: err } = await supabase
+      .from('active_jobs')
+      .update({ paused_at: now })
+      .eq('installer_id', installerId)
+    if (err) return { error: err.message }
+    setActiveJobs(prev => prev.map(j => j.installer_id === installerId ? { ...j, paused_at: now } : j))
+    return { error: null }
+  }
+
+  async function resumeJob(installerId: string): Promise<{ error: string | null }> {
+    const job = activeJobs.find(j => j.installer_id === installerId)
+    if (!job?.paused_at) return { error: 'Not paused' }
+
+    // Block resume if paused before today's midnight (overnight)
+    const pausedAt = new Date(job.paused_at)
+    const now = new Date()
+    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    if (pausedAt < todayMidnight) return { error: 'overnight' }
+
+    // Shift start_ts forward by pause duration so elapsed stays correct
+    const pausedMs = now.getTime() - pausedAt.getTime()
+    const newStart = new Date(new Date(job.start_ts).getTime() + pausedMs).toISOString()
+
+    const { error: err } = await supabase
+      .from('active_jobs')
+      .update({ paused_at: null, start_ts: newStart })
+      .eq('installer_id', installerId)
+    if (err) return { error: err.message }
+
+    setActiveJobs(prev => prev.map(j =>
+      j.installer_id === installerId ? { ...j, paused_at: null, start_ts: newStart } : j
+    ))
+    return { error: null }
+  }
+
+  return { activeJobs, loading, error, fetch, clockIn, clockOut, discardSession, pauseJob, resumeJob }
 }

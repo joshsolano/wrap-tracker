@@ -1,11 +1,12 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
-import type { Installer } from '../lib/types'
+import type { Installer, Manager } from '../lib/types'
 
 interface AuthCtx {
   session: Session | null
   installer: Installer | null
+  manager: Manager | null
   isAdmin: boolean
   isGuest: boolean
   loading: boolean
@@ -19,17 +20,31 @@ const AuthContext = createContext<AuthCtx | null>(null)
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [installer, setInstaller] = useState<Installer | null>(null)
+  const [manager, setManager] = useState<Manager | null>(null)
   const [isGuest, setIsGuest] = useState(false)
   const [loading, setLoading] = useState(true)
 
   async function fetchInstaller(userId: string) {
-    const { data } = await supabase
+    const { data: instData } = await supabase
       .from('installers')
       .select('*')
       .eq('user_id', userId)
       .eq('active', true)
       .single()
-    setInstaller(data as Installer | null)
+    if (instData) {
+      setInstaller(instData as Installer)
+      setManager(null)
+      setLoading(false)
+      return
+    }
+    // Not an installer — check managers table
+    const { data: mgrData } = await supabase
+      .from('managers')
+      .select('*')
+      .eq('user_id', userId)
+      .single()
+    setInstaller(null)
+    setManager(mgrData as Manager | null)
     setLoading(false)
   }
 
@@ -62,6 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       } else {
         setInstaller(null)
+        setManager(null)
         setIsGuest(false)
         setLoading(false)
       }
@@ -78,7 +94,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function signOut() {
     setIsGuest(false)
     await supabase.auth.signOut()
-    setInstaller(null); setSession(null)
+    setInstaller(null); setManager(null); setSession(null)
   }
 
   async function enterGuestMode() {
@@ -92,7 +108,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ session, installer, isAdmin: installer?.role === 'admin', isGuest, loading, signIn, signOut, enterGuestMode }}>
+    <AuthContext.Provider value={{ session, installer, manager, isAdmin: installer?.role === 'admin' || !!manager, isGuest, loading, signIn, signOut, enterGuestMode }}>
       {children}
     </AuthContext.Provider>
   )

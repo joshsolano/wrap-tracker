@@ -41,28 +41,35 @@ serve(async (req) => {
       })
     }
 
-    const { data: callerInstaller, error: installerErr } = await adminClient
+    // Check if caller is an admin installer
+    const { data: callerInstaller } = await adminClient
       .from('installers')
       .select('role')
       .eq('user_id', callerUser.id)
       .eq('active', true)
       .single()
 
-    if (installerErr || callerInstaller?.role !== 'admin') {
+    // If not an admin installer, check if they're a manager
+    let isAdmin = callerInstaller?.role === 'admin'
+    if (!isAdmin) {
+      const { data: callerManager } = await adminClient
+        .from('managers')
+        .select('id')
+        .eq('user_id', callerUser.id)
+        .single()
+      isAdmin = !!callerManager
+    }
+
+    if (!isAdmin) {
       return new Response(JSON.stringify({ error: 'Forbidden: admin only' }), {
         status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
     // Parse body
-    const { email, password, name, color, birthday, role } = await req.json()
+    const { email, password, name, color, birthday, role, is_manager } = await req.json()
     if (!email || !password || !name) {
       return new Response(JSON.stringify({ error: 'email, password, and name are required' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-    if (password.length < 8) {
-      return new Response(JSON.stringify({ error: 'Password must be at least 8 characters' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
@@ -77,6 +84,26 @@ serve(async (req) => {
     if (createErr || !newUser.user) {
       return new Response(JSON.stringify({ error: createErr?.message ?? 'Failed to create user' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    if (is_manager) {
+      // Insert into managers table
+      const { data: manager, error: insertErr } = await adminClient
+        .from('managers')
+        .insert({ user_id: newUser.user.id, name: name.trim() })
+        .select()
+        .single()
+
+      if (insertErr) {
+        await adminClient.auth.admin.deleteUser(newUser.user.id)
+        return new Response(JSON.stringify({ error: insertErr.message }), {
+          status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      return new Response(JSON.stringify({ manager }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 

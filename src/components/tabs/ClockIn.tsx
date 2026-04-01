@@ -11,7 +11,7 @@ import ManualEntryModal from './ManualEntryModal'
 
 export default function ClockIn() {
   const { installer: me, isGuest } = useAuth()
-  const { installers, projects, activeJobs, logs, clockIn, clockOut, discardSession } = useAppData()
+  const { installers, projects, activeJobs, logs, clockIn, clockOut, discardSession, pauseJob, resumeJob } = useAppData()
 
   const [selectedInstallerId, setSelectedInstallerId] = useState<string | null>(me?.id ?? null)
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
@@ -41,8 +41,11 @@ export default function ClockIn() {
     }
   }, [activeJob?.id])
 
+  const isPaused = !!activeJob?.paused_at
   const elapsed = activeJob
-    ? Math.max(0, Math.floor((Date.now() - new Date(activeJob.start_ts).getTime()) / 1000))
+    ? activeJob.paused_at
+      ? Math.max(0, Math.floor((new Date(activeJob.paused_at).getTime() - new Date(activeJob.start_ts).getTime()) / 1000))
+      : Math.max(0, Math.floor((Date.now() - new Date(activeJob.start_ts).getTime()) / 1000))
     : 0
   const elH = String(Math.floor(elapsed / 3600)).padStart(2, '0')
   const elM = String(Math.floor((elapsed % 3600) / 60)).padStart(2, '0')
@@ -118,6 +121,36 @@ export default function ClockIn() {
     }
   }
 
+  async function handlePause() {
+    if (!selectedInstallerId || busy) return
+    setBusy(true)
+    try {
+      const { error } = await pauseJob(selectedInstallerId)
+      if (error) setWarn({ title: 'Pause failed', body: error, ok: 'OK' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleResume() {
+    if (!selectedInstallerId || busy) return
+    setBusy(true)
+    try {
+      const { error } = await resumeJob(selectedInstallerId)
+      if (error === 'overnight') {
+        setWarn({
+          title: 'Paused overnight',
+          body: "Sessions can't be resumed after being paused overnight. Please discard and start a new session.",
+          ok: 'OK',
+        })
+      } else if (error) {
+        setWarn({ title: 'Resume failed', body: error, ok: 'OK' })
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
   function handleDiscard() {
     if (!selectedInstallerId) return
     setWarn({
@@ -160,6 +193,13 @@ export default function ClockIn() {
           </div>
         </div>
       )}
+
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: B.yellow + '12', border: `1px solid ${B.yellow}44`, borderRadius: 12, padding: '11px 14px', marginBottom: 20 }}>
+        <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>⚠️</span>
+        <div style={{ fontSize: 13, color: B.yellow, fontWeight: 600, lineHeight: 1.5 }}>
+          Clock in <span style={{ textDecoration: 'underline' }}>before</span> the backing paper comes off the panel — entries started after will not count.
+        </div>
+      </div>
 
       <div style={{ marginBottom: 20 }}>
         <div style={{ fontSize: 11, fontWeight: 600, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>Who's wrapping?</div>
@@ -208,8 +248,10 @@ export default function ClockIn() {
             </div>
 
             <div style={{ textAlign: 'center', padding: '20px 0', borderTop: `1px solid ${B.border}`, borderBottom: `1px solid ${B.border}`, marginBottom: 20 }}>
-              <div style={{ fontSize: 11, color: B.textTer, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>Elapsed</div>
-              <div style={{ fontSize: 54, fontWeight: 800, color: activeJob.is_color_change ? CC : B.yellow, letterSpacing: '-0.04em', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+              <div style={{ fontSize: 11, color: isPaused ? B.orange : B.textTer, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>
+                {isPaused ? 'Paused' : 'Elapsed'}
+              </div>
+              <div style={{ fontSize: 54, fontWeight: 800, color: isPaused ? B.orange : activeJob.is_color_change ? CC : B.yellow, letterSpacing: '-0.04em', fontVariantNumeric: 'tabular-nums', lineHeight: 1, opacity: isPaused ? 0.7 : 1 }}>
                 {elH}:{elM}:{elS}
               </div>
               <div style={{ fontSize: 12, color: B.textTer, marginTop: 8 }}>Started {fmtClock(activeJob.start_ts)}</div>
@@ -234,19 +276,40 @@ export default function ClockIn() {
               </div>
             ) : (
               <>
-                <button
-                  onClick={handleClockOut}
-                  disabled={busy}
-                  style={{ width: '100%', background: activeJob.is_color_change ? CC : B.yellow, color: activeJob.is_color_change ? B.text : B.bg, border: 'none', borderRadius: 14, padding: 18, fontSize: 17, fontWeight: 800, marginBottom: 10, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1 }}
-                >
-                  {busy ? 'Clocking out…' : 'Clock Out'}
-                </button>
-                <button
-                  onClick={handleDiscard}
-                  style={{ width: '100%', background: 'transparent', color: B.textTer, border: `1px solid ${B.border}`, borderRadius: 14, padding: 13, fontSize: 14, cursor: 'pointer' }}
-                >
-                  Discard session
-                </button>
+                {isPaused ? (
+                  <button
+                    onClick={handleResume}
+                    disabled={busy}
+                    style={{ width: '100%', background: B.orange, color: B.bg, border: 'none', borderRadius: 14, padding: 18, fontSize: 17, fontWeight: 800, marginBottom: 10, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1 }}
+                  >
+                    {busy ? 'Resuming…' : 'Resume'}
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleClockOut}
+                    disabled={busy}
+                    style={{ width: '100%', background: activeJob.is_color_change ? CC : B.yellow, color: activeJob.is_color_change ? B.text : B.bg, border: 'none', borderRadius: 14, padding: 18, fontSize: 17, fontWeight: 800, marginBottom: 10, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1 }}
+                  >
+                    {busy ? 'Clocking out…' : 'Clock Out'}
+                  </button>
+                )}
+                <div style={{ display: 'grid', gridTemplateColumns: isPaused ? '1fr' : '1fr 1fr', gap: 8 }}>
+                  {!isPaused && (
+                    <button
+                      onClick={handlePause}
+                      disabled={busy}
+                      style={{ background: 'transparent', color: B.orange, border: `1px solid ${B.orange}55`, borderRadius: 14, padding: 13, fontSize: 14, fontWeight: 600, cursor: busy ? 'default' : 'pointer' }}
+                    >
+                      Pause
+                    </button>
+                  )}
+                  <button
+                    onClick={handleDiscard}
+                    style={{ background: 'transparent', color: B.textTer, border: `1px solid ${B.border}`, borderRadius: 14, padding: 13, fontSize: 14, cursor: 'pointer' }}
+                  >
+                    Discard
+                  </button>
+                </div>
               </>
             )}
           </div>

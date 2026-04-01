@@ -7,17 +7,19 @@ import { Toast } from '../ui/Toast'
 import { B, CC, fmtDate, fmtClock, fmtTime } from '../../lib/utils'
 import type { Log, WarnConfig } from '../../lib/types'
 import ManualEntryModal from './ManualEntryModal'
+import EditLogModal from './EditLogModal'
 
 const PAGE_SIZE = 50
 
 export default function LogTab() {
-  const { logs, installers, deleteLog } = useAppData()
+  const { allLogs: logs, installers, deleteLog, voidLog } = useAppData()
   const { isAdmin, isGuest } = useAuth()
   const [filter, setFilter] = useState('All')
   const [page, setPage] = useState(0)
   const [warn, setWarn] = useState<WarnConfig | null>(null)
   const [toast, setToast] = useState('')
   const [showManual, setShowManual] = useState(false)
+  const [editLog, setEditLog] = useState<Log | null>(null)
 
   const filtered = logs.filter(
     r => filter === 'All' || (r.installer_name ?? r.installer?.name ?? '').split(' ')[0] === filter
@@ -58,6 +60,16 @@ export default function LogTab() {
           onSave={() => {
             setShowManual(false)
             setToast('Manual entry saved')
+          }}
+        />
+      )}
+      {editLog && (
+        <EditLogModal
+          log={editLog}
+          onClose={() => setEditLog(null)}
+          onSave={() => {
+            setEditLog(null)
+            setToast('Times updated')
           }}
         />
       )}
@@ -132,6 +144,7 @@ export default function LogTab() {
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 gap: 8,
+                opacity: r.voided ? 0.45 : 1,
               }}
             >
               <div style={{ minWidth: 0, flex: 1 }}>
@@ -160,6 +173,7 @@ export default function LogTab() {
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
+                      textDecoration: r.voided ? 'line-through' : 'none',
                     }}
                   >
                     {r.panel_name}
@@ -180,6 +194,11 @@ export default function LogTab() {
                       CC
                     </span>
                   )}
+                  {r.voided && (
+                    <span style={{ fontSize: 10, fontWeight: 700, color: B.red, background: B.red + '22', padding: '1px 6px', borderRadius: 8, flexShrink: 0 }}>
+                      VOID
+                    </span>
+                  )}
                 </div>
                 <div style={{ fontSize: 12, color: B.textTer }}>
                   {isGuest ? <Redacted>{r.project_name ?? ''}</Redacted> : r.project_name} · {fmtDate(r.start_ts)}
@@ -194,21 +213,51 @@ export default function LogTab() {
                 <div style={{ fontSize: 11, color: B.textTer }}>{fmtTime(r.mins)}</div>
               </div>
               {isAdmin && (
-                <button
-                  onClick={() => confirmDelete(r)}
-                  style={{
-                    background: 'none',
-                    border: `1px solid ${B.border}`,
-                    borderRadius: 8,
-                    color: B.textTer,
-                    fontSize: 12,
-                    padding: '5px 8px',
-                    flexShrink: 0,
-                    cursor: 'pointer',
-                  }}
-                >
-                  ×
-                </button>
+                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                  <button
+                    onClick={() => setEditLog(r)}
+                    style={{
+                      background: 'none',
+                      border: `1px solid ${B.border}`,
+                      borderRadius: 8,
+                      color: B.textTer,
+                      fontSize: 12,
+                      padding: '5px 8px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    ✎
+                  </button>
+                  <button
+                    onClick={() => voidLog(r.id, !r.voided)}
+                    style={{
+                      background: r.voided ? B.red + '22' : 'none',
+                      border: `1px solid ${r.voided ? B.red + '66' : B.border}`,
+                      borderRadius: 8,
+                      color: r.voided ? B.red : B.textTer,
+                      fontSize: 11,
+                      fontWeight: r.voided ? 700 : 400,
+                      padding: '5px 8px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {r.voided ? 'UNVOID' : 'VOID'}
+                  </button>
+                  <button
+                    onClick={() => confirmDelete(r)}
+                    style={{
+                      background: 'none',
+                      border: `1px solid ${B.border}`,
+                      borderRadius: 8,
+                      color: B.textTer,
+                      fontSize: 12,
+                      padding: '5px 8px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
               )}
             </div>
           )

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Installer } from '../lib/types'
 
@@ -6,8 +6,6 @@ export function useInstallers() {
   const [installers, setInstallers] = useState<Installer[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
-
   const fetchInstallers = useCallback(async () => {
     const { data, error: err } = await supabase
       .from('installers')
@@ -25,22 +23,7 @@ export function useInstallers() {
     setLoading(false)
   }, [])
 
-  useEffect(() => {
-    fetchInstallers()
-
-    channelRef.current = supabase
-      .channel('installers_changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'installers' }, fetchInstallers)
-      .subscribe(status => {
-        if (status === 'CHANNEL_ERROR' || status === 'CLOSED') {
-          setTimeout(fetchInstallers, 2000)
-        }
-      })
-
-    return () => {
-      if (channelRef.current) supabase.removeChannel(channelRef.current)
-    }
-  }, [fetchInstallers])
+  useEffect(() => { fetchInstallers() }, [fetchInstallers])
 
   async function updateInstaller(
     id: string,
@@ -100,6 +83,25 @@ export function useInstallers() {
     return { installer: (json.installer as Installer) ?? null, error: null }
   }
 
+  async function addManagerViaEdge(params: {
+    email: string
+    password: string
+    name: string
+  }): Promise<{ error: string | null }> {
+    const { error } = await supabase.functions.invoke('create-installer', {
+      body: { ...params, is_manager: true },
+    })
+    if (error) {
+      try {
+        const body = await (error as any).context?.json?.()
+        if (body?.error) return { error: body.error }
+        if (body?.message) return { error: body.message }
+      } catch { /* ignore */ }
+      return { error: error.message }
+    }
+    return { error: null }
+  }
+
   return {
     installers,
     loading,
@@ -108,5 +110,6 @@ export function useInstallers() {
     updateInstaller,
     deactivateInstaller,
     addInstallerViaEdge,
+    addManagerViaEdge,
   }
 }

@@ -1,19 +1,18 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAppData } from '../../context/AppDataContext'
 import { useAuth } from '../../context/AuthContext'
 import { WarnModal } from '../ui/WarnModal'
 import { Toast } from '../ui/Toast'
 import { B, CC, SWATCH_COLORS } from '../../lib/utils'
-import { useDemoFeatures } from '../../hooks/useDemoFeatures'
-import type { WarnConfig, Installer } from '../../lib/types'
+import { supabase } from '../../lib/supabase'
+import type { WarnConfig, Installer, Manager } from '../../lib/types'
 
 interface Props { onSignOut: () => void }
 
 export default function Settings({ onSignOut }: Props) {
-  const { installers, logs, activeJobs, updateInstaller, deactivateInstaller, addInstallerViaEdge } = useAppData()
+  const { installers, logs, projects, activeJobs, updateInstaller, deactivateInstaller, addInstallerViaEdge, addManagerViaEdge } = useAppData()
   const { isAdmin, installer: me, isGuest } = useAuth()
 
-  const { demoEnabled, toggleDemo } = useDemoFeatures()
   const [warn, setWarn] = useState<WarnConfig | null>(null)
   const [toast, setToast] = useState('')
 
@@ -37,6 +36,47 @@ export default function Settings({ onSignOut }: Props) {
   const [newRole, setNewRole] = useState<'installer'|'admin'>('installer')
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
+
+  // Managers
+  const [managers, setManagers] = useState<Manager[]>([])
+  const [newMgrEmail, setNewMgrEmail] = useState('')
+  const [newMgrPassword, setNewMgrPassword] = useState('')
+  const [newMgrName, setNewMgrName] = useState('')
+  const [creatingMgr, setCreatingMgr] = useState(false)
+  const [mgrError, setMgrError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!isAdmin) return
+    supabase.from('managers').select('*').order('created_at').then(({ data }) => {
+      if (data) setManagers(data as Manager[])
+    })
+  }, [isAdmin])
+
+  async function handleCreateManager(e: React.FormEvent) {
+    e.preventDefault()
+    if (!newMgrEmail.trim() || !newMgrPassword || !newMgrName.trim()) return
+    setCreatingMgr(true); setMgrError(null)
+    const { error } = await addManagerViaEdge({ email: newMgrEmail.trim(), password: newMgrPassword, name: newMgrName.trim() })
+    setCreatingMgr(false)
+    if (error) { setMgrError(error); return }
+    setNewMgrEmail(''); setNewMgrPassword(''); setNewMgrName('')
+    setToast(`${newMgrName.trim()} added as manager`)
+    const { data } = await supabase.from('managers').select('*').order('created_at')
+    if (data) setManagers(data as Manager[])
+  }
+
+  async function handleRemoveManager(mgr: Manager) {
+    setWarn({
+      title: 'Remove manager?',
+      body: `${mgr.name} will lose access. Their auth account will remain but be unlinked.`,
+      ok: 'Remove', cancel: 'Cancel', danger: true,
+      onOk: async () => {
+        await supabase.from('managers').delete().eq('id', mgr.id)
+        setManagers(prev => prev.filter(m => m.id !== mgr.id))
+        setToast(`${mgr.name} removed`)
+      },
+    })
+  }
 
   // Export
   const [exportDateRange, setExportDateRange] = useState('all')
@@ -106,6 +146,12 @@ export default function Settings({ onSignOut }: Props) {
       if (exportDateRange === 'lastmonth') { const lm=new Date(now.getFullYear(),now.getMonth()-1,1); return d.getFullYear()===lm.getFullYear()&&d.getMonth()===lm.getMonth() }
       if (exportDateRange === 'thisyear') return d.getFullYear()===now.getFullYear()
       if (exportDateRange === 'lastyear') return d.getFullYear()===now.getFullYear()-1
+      if (exportDateRange === 'lastweek') {
+        const dow = now.getDay()
+        const startOfThisWeek = new Date(now); startOfThisWeek.setDate(now.getDate() - ((dow + 6) % 7)); startOfThisWeek.setHours(0,0,0,0)
+        const startOfLastWeek = new Date(startOfThisWeek); startOfLastWeek.setDate(startOfThisWeek.getDate() - 7)
+        return d >= startOfLastWeek && d < startOfThisWeek
+      }
       if (exportDateRange === 'last30') return new Date(ts).getTime() >= now.getTime()-30*86400000
       if (exportDateRange === 'last90') return new Date(ts).getTime() >= now.getTime()-90*86400000
       return true
@@ -146,13 +192,33 @@ export default function Settings({ onSignOut }: Props) {
       lines.push('')
     }
 
+    if (exportSections.projects) {
+      lines.push(row(['=== PROJECT SUMMARY ===']))
+      lines.push(row(['Project','Type','Panels Done','Total Panels','SQFT','Total Hours','Status','Due Date']))
+      const allProjIds = new Set(filteredLogs.map(r => r.project_id).filter(Boolean))
+      for (const proj of projects.filter(p => allProjIds.has(p.id) || filteredLogs.some(r => r.project_id === p.id))) {
+        const pLogs = filteredLogs.filter(r => r.project_id === proj.id && r.status === 'Complete')
+        const pnls = proj.panels ?? []
+        const donePanelIds = new Set(pLogs.filter(r => r.panel_id).map(r => r.panel_id!))
+        const doneCount = pnls.filter(pnl => donePanelIds.has(pnl.id)).length
+        const sqft = pLogs.reduce((s,r) => s+(r.sqft??0), 0)
+        const mins = pLogs.reduce((s,r) => s+(r.mins??0), 0)
+        const isComplete = pnls.length > 0 && doneCount >= pnls.length
+        lines.push(row([proj.name, proj.project_type === 'colorchange' ? 'Color Change' : 'Commercial', doneCount, pnls.length, sqft.toFixed(1), (mins/60).toFixed(1), isComplete ? 'Complete' : 'In Progress', proj.due_date ?? '']))
+      }
+      lines.push('')
+    }
+
     if (exportSections.totals) {
       const comLogs = filteredLogs.filter(r => !r.is_color_change && r.status==='Complete' && r.sqft && r.sqft>0 && r.mins && r.mins>0)
       const tSqft = comLogs.reduce((s,r)=>s+(r.sqft??0),0)
       const tMins = comLogs.reduce((s,r)=>s+(r.mins??0),0)
-      lines.push(row(['=== SHOP TOTALS (Commercial) ===']))
-      lines.push(row(['Total SQFT','Total Panels','Total Hours','Shop Avg SQFT/HR']))
-      lines.push(row([tSqft.toFixed(1),comLogs.length,(tMins/60).toFixed(1),tMins>0?(tSqft/(tMins/60)).toFixed(2):'--']))
+      const ccLogs = filteredLogs.filter(r => r.is_color_change && r.status==='Complete' && r.mins && r.mins>0)
+      const ccMins = ccLogs.reduce((s,r)=>s+(r.mins??0),0)
+      lines.push(row(['=== SHOP TOTALS ===']))
+      lines.push(row(['Type','Total SQFT','Total Panels','Total Hours','Avg SQFT/HR']))
+      lines.push(row(['Commercial',tSqft.toFixed(1),comLogs.length,(tMins/60).toFixed(1),tMins>0?(tSqft/(tMins/60)).toFixed(2):'--']))
+      lines.push(row(['Color Change','--',ccLogs.length,(ccMins/60).toFixed(1),'--']))
     }
 
     const blob = new Blob([lines.join('\n')], { type:'text/csv;charset=utf-8;' })
@@ -234,7 +300,7 @@ export default function Settings({ onSignOut }: Props) {
                   style={{ padding:'10px 12px',fontSize:14,borderRadius:10,background:B.surface2,color:B.text,border:'none',outline:'none' }} />
                 <input type="email" placeholder="Email" value={newEmail} onChange={e => setNewEmail(e.target.value)}
                   style={{ padding:'10px 12px',fontSize:14,borderRadius:10,background:B.surface2,color:B.text,border:'none',outline:'none' }} />
-                <input type="password" placeholder="Password (min 8 chars)" value={newPassword} onChange={e => setNewPassword(e.target.value)}
+                <input type="password" placeholder="Password" value={newPassword} onChange={e => setNewPassword(e.target.value)}
                   style={{ padding:'10px 12px',fontSize:14,borderRadius:10,background:B.surface2,color:B.text,border:'none',outline:'none' }} />
                 <input placeholder="Birthday MM/DD (optional)" value={newBirthday} onChange={e => setNewBirthday(e.target.value)}
                   style={{ padding:'10px 12px',fontSize:14,borderRadius:10,background:B.surface2,color:B.text,border:'none',outline:'none' }} />
@@ -263,13 +329,57 @@ export default function Settings({ onSignOut }: Props) {
       </div>
 
       {isAdmin && (
+        <div style={{ background:B.surface,borderRadius:16,overflow:'hidden',border:`1px solid ${B.border}`,marginBottom:20 }}>
+          <div style={{ padding:'14px 18px',borderBottom:`1px solid ${B.border}` }}>
+            <div style={{ fontSize:11,fontWeight:600,color:B.textTer,letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:2 }}>Managers</div>
+            <div style={{ fontSize:12,color:B.textTer }}>Admin access without installer tracking</div>
+          </div>
+          {managers.length === 0 && (
+            <div style={{ padding:'12px 18px', fontSize:13,color:B.textTer }}>No managers yet.</div>
+          )}
+          {managers.map((mgr, i) => (
+            <div key={mgr.id} style={{ display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 18px',borderBottom:i<managers.length-1?`1px solid ${B.border}`:'none' }}>
+              <div style={{ display:'flex',alignItems:'center',gap:10 }}>
+                <div style={{ width:32,height:32,borderRadius:'50%',background:B.surface3,border:`1px solid ${B.yellow}44`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:800,color:B.yellow }}>
+                  {mgr.name.charAt(0)}
+                </div>
+                <div>
+                  <div style={{ fontSize:14,fontWeight:600 }}>{mgr.name}</div>
+                  <div style={{ fontSize:11,color:B.yellow,fontWeight:600,textTransform:'uppercase',letterSpacing:'0.06em' }}>Manager</div>
+                </div>
+              </div>
+              <button onClick={() => handleRemoveManager(mgr)} style={{ background:'none',border:'none',color:B.red,fontSize:13,fontWeight:600,cursor:'pointer' }}>Remove</button>
+            </div>
+          ))}
+          <div style={{ padding:'14px 18px',borderTop:managers.length>0?`1px solid ${B.border}`:'none' }}>
+            <div style={{ fontSize:12,color:B.textSec,fontWeight:600,marginBottom:10 }}>Add manager</div>
+            <form onSubmit={handleCreateManager}>
+              <div style={{ display:'flex',flexDirection:'column',gap:8 }}>
+                <input placeholder="Full name" value={newMgrName} onChange={e => setNewMgrName(e.target.value)}
+                  style={{ padding:'10px 12px',fontSize:14,borderRadius:10,background:B.surface2,color:B.text,border:'none',outline:'none' }} />
+                <input type="email" placeholder="Email" value={newMgrEmail} onChange={e => setNewMgrEmail(e.target.value)}
+                  style={{ padding:'10px 12px',fontSize:14,borderRadius:10,background:B.surface2,color:B.text,border:'none',outline:'none' }} />
+                <input type="password" placeholder="Password" value={newMgrPassword} onChange={e => setNewMgrPassword(e.target.value)}
+                  style={{ padding:'10px 12px',fontSize:14,borderRadius:10,background:B.surface2,color:B.text,border:'none',outline:'none' }} />
+                {mgrError && <div style={{ fontSize:13,color:B.red,padding:'8px 12px',background:B.red+'15',borderRadius:8 }}>{mgrError}</div>}
+                <button type="submit" disabled={creatingMgr||!newMgrName.trim()||!newMgrEmail.trim()||!newMgrPassword}
+                  style={{ background:creatingMgr||!newMgrName.trim()||!newMgrEmail.trim()||!newMgrPassword?B.surface3:B.yellow,color:creatingMgr||!newMgrName.trim()||!newMgrEmail.trim()||!newMgrPassword?B.textTer:B.bg,border:'none',borderRadius:10,padding:11,fontWeight:800,fontSize:14,cursor:'pointer' }}>
+                  {creatingMgr ? 'Creating…' : 'Add Manager'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {isAdmin && (
         <div style={{ background:B.surface,borderRadius:16,padding:16,border:`1px solid ${B.border}`,marginBottom:16 }}>
           <div style={{ fontSize:13,fontWeight:700,marginBottom:14 }}>Export data</div>
 
           <div style={{ marginBottom:14 }}>
             <div style={{ fontSize:12,color:B.textSec,fontWeight:600,marginBottom:8 }}>Date range</div>
             <div style={{ display:'flex',flexWrap:'wrap',gap:6 }}>
-              {[{ v:'all',l:'All time' },{ v:'thismonth',l:'This month' },{ v:'lastmonth',l:'Last month' },{ v:'last30',l:'Last 30 days' },{ v:'last90',l:'Last 90 days' },{ v:'thisyear',l:'This year' },{ v:'lastyear',l:'Last year' }].map(opt => (
+              {[{ v:'all',l:'All time' },{ v:'lastweek',l:'Last week' },{ v:'thismonth',l:'This month' },{ v:'lastmonth',l:'Last month' },{ v:'last30',l:'Last 30 days' },{ v:'last90',l:'Last 90 days' },{ v:'thisyear',l:'This year' },{ v:'lastyear',l:'Last year' }].map(opt => (
                 <button key={opt.v} onClick={() => setExportDateRange(opt.v)}
                   style={{ padding:'7px 13px',borderRadius:20,border:`1.5px solid ${exportDateRange===opt.v?B.yellow:B.border}`,background:exportDateRange===opt.v?B.yellow+'18':'transparent',color:exportDateRange===opt.v?B.yellow:B.textSec,fontWeight:exportDateRange===opt.v?700:400,fontSize:13,cursor:'pointer' }}>
                   {opt.l}
@@ -327,24 +437,6 @@ export default function Settings({ onSignOut }: Props) {
         </div>
       </div>
 
-      {isAdmin && (
-        <div style={{ background:B.surface,borderRadius:16,padding:16,border:`1px solid ${B.border}`,marginBottom:16 }}>
-          <div style={{ fontSize:13,fontWeight:700,marginBottom:4 }}>Demo Features</div>
-          <div style={{ fontSize:12,color:B.textTer,marginBottom:14 }}>Experimental tabs visible to admins only while in preview.</div>
-          <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 14px',background:B.surface2,borderRadius:10 }}>
-            <div>
-              <div style={{ fontSize:13,fontWeight:600,color:demoEnabled?B.text:B.textTer }}>Bounties tab</div>
-              <div style={{ fontSize:11,color:B.textTer,marginTop:2 }}>Performance challenges &amp; prizes</div>
-            </div>
-            <button
-              onClick={toggleDemo}
-              style={{ width:38,height:22,borderRadius:11,border:'none',background:demoEnabled?B.green:B.surface3,position:'relative',transition:'background 0.2s',flexShrink:0,cursor:'pointer' }}
-            >
-              <span style={{ position:'absolute',top:3,left:demoEnabled?18:3,width:16,height:16,borderRadius:'50%',background:B.text,transition:'left 0.2s',display:'block' }} />
-            </button>
-          </div>
-        </div>
-      )}
 
       <button onClick={() => setWarn({ title:'Sign out?', body:'You will be returned to the login screen.', ok:'Sign out', cancel:'Cancel', onOk:onSignOut })}
         style={{ width:'100%',background:'transparent',color:B.red,border:`1px solid ${B.red}44`,borderRadius:14,padding:14,fontSize:14,fontWeight:600,cursor:'pointer' }}>

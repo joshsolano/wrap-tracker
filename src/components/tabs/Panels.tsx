@@ -14,6 +14,7 @@ interface BulkRow {
   name: string
   h: string
   w: string
+  repeat: string
 }
 
 export default function Panels() {
@@ -24,6 +25,7 @@ export default function Panels() {
     createProject,
     addPanel,
     addPanelsBulk,
+    updatePanel,
     removePanel,
     archiveProject,
     updateDueDate,
@@ -42,9 +44,9 @@ export default function Panels() {
   const [libWErr, setLibWErr] = useState('')
   const [showBulk, setShowBulk] = useState(false)
   const [bulkRows, setBulkRows] = useState<BulkRow[]>([
-    { id: ++_bulkId, name: '', h: '', w: '' },
-    { id: ++_bulkId, name: '', h: '', w: '' },
-    { id: ++_bulkId, name: '', h: '', w: '' },
+    { id: ++_bulkId, name: '', h: '', w: '', repeat: '' },
+    { id: ++_bulkId, name: '', h: '', w: '', repeat: '' },
+    { id: ++_bulkId, name: '', h: '', w: '', repeat: '' },
   ])
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [showCompleted, setShowCompleted] = useState(false)
@@ -53,6 +55,8 @@ export default function Panels() {
   const [warn, setWarn] = useState<WarnConfig | null>(null)
   const [toast, setToast] = useState('')
   const [saving, setSaving] = useState(false)
+  const [editingPanelId, setEditingPanelId] = useState<string | null>(null)
+  const [editingPanelName, setEditingPanelName] = useState('')
 
   const sortedProjects = useMemo(() => {
     const lastActivity = new Map<string, number>()
@@ -132,7 +136,17 @@ export default function Panels() {
     if (!libProjectId) return
     const valid = bulkRows
       .filter(r => r.name.trim())
-      .map(r => ({ name: r.name.trim(), heightIn: parseDim(r.h), widthIn: parseDim(r.w) }))
+      .flatMap(r => {
+        const n = Math.max(1, parseInt(r.repeat) || 1)
+        if (n === 1) return [{ name: r.name.trim(), heightIn: parseDim(r.h), widthIn: parseDim(r.w) }]
+        // Strip trailing number from name so "Driver Side 1" → "Driver Side", then re-number
+        const baseName = r.name.trim().replace(/\s+\d+$/, '')
+        return Array.from({ length: n }, (_, i) => ({
+          name: `${baseName} ${i + 1}`,
+          heightIn: parseDim(r.h),
+          widthIn: parseDim(r.w),
+        }))
+      })
     if (!valid.length) return
     setSaving(true)
     const { inserted, skipped, error } = await addPanelsBulk({ projectId: libProjectId, panels: valid })
@@ -143,9 +157,9 @@ export default function Panels() {
     }
     if (libDueDate) await updateDueDate(libProjectId, libDueDate)
     setBulkRows([
-      { id: ++_bulkId, name: '', h: '', w: '' },
-      { id: ++_bulkId, name: '', h: '', w: '' },
-      { id: ++_bulkId, name: '', h: '', w: '' },
+      { id: ++_bulkId, name: '', h: '', w: '', repeat: '' },
+      { id: ++_bulkId, name: '', h: '', w: '', repeat: '' },
+      { id: ++_bulkId, name: '', h: '', w: '', repeat: '' },
     ])
     setShowBulk(false)
     setToast(skipped > 0 ? `${inserted} panels imported (${skipped} already existed, skipped)` : `${inserted} panels imported`)
@@ -163,7 +177,7 @@ export default function Panels() {
       const n = [...prev]
       lines.forEach((cols, li) => {
         const ri = idx + li
-        if (ri >= n.length) n.push({ id: ++_bulkId, name: '', h: '', w: '' })
+        if (ri >= n.length) n.push({ id: ++_bulkId, name: '', h: '', w: '', repeat: '' })
         const nr = { ...n[ri] }
         if (field === 'name') {
           nr.name = cols[0] || nr.name
@@ -179,6 +193,14 @@ export default function Panels() {
       })
       return n
     })
+  }
+
+  async function handleSavePanelName(panelId: string) {
+    const trimmed = editingPanelName.trim()
+    if (!trimmed) { setEditingPanelId(null); return }
+    const { error } = await updatePanel(panelId, trimmed)
+    if (error) setToast('Error: ' + error)
+    setEditingPanelId(null)
   }
 
   function handleRemovePanel(panelId: string, panelName: string, projId: string) {
@@ -269,6 +291,9 @@ export default function Panels() {
       if (s != null) { panelSqftSum += s; panelSqftHasAny = true }
     }
     const totalPanelSqft = panelSqftHasAny ? panelSqftSum : null
+    const totalMins = logs
+      .filter(r => r.project_id === proj.id && r.status === 'Complete')
+      .reduce((s, r) => s + (r.mins ?? 0), 0)
     const due = proj.due_date
     const daysLeft = daysUntil(due)
     const dueColor =
@@ -343,7 +368,7 @@ export default function Panels() {
               />
             </div>
             <span style={{ fontSize: 11, color: B.textTer, flexShrink: 0, fontWeight: 600 }}>
-              {donePnls.length}/{pnls.length} panels{totalPanelSqft != null ? ` · ${totalPanelSqft.toFixed(1)} sqft total` : ''}
+              {donePnls.length}/{pnls.length} panels{totalPanelSqft != null ? ` · ${totalPanelSqft.toFixed(1)} sqft` : ''}{totalMins > 0 ? ` · ${(totalMins / 60).toFixed(1)}h total` : ''}
             </span>
           </div>
         </button>
@@ -466,23 +491,38 @@ export default function Panels() {
                     }}
                   >
                     {isDone && <span style={{ fontSize: 10, color: B.green }}>✓</span>}
-                    <span style={{ fontSize: 13, color: isDone ? B.green : B.text }}>{pnl.name}</span>
-                    {sqft && <span style={{ fontSize: 11, color: isDone ? B.green : acc }}>·{sqft.toFixed(1)}sqft</span>}
-                    {isAdmin && (
-                      <button
-                        onClick={() => handleRemovePanel(pnl.id, pnl.name, proj.id)}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: B.textTer,
-                          fontSize: 14,
-                          padding: '0 0 0 2px',
-                          lineHeight: 1,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        ×
-                      </button>
+                    {isAdmin && editingPanelId === pnl.id ? (
+                      <>
+                        <input
+                          value={editingPanelName}
+                          onChange={e => setEditingPanelName(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') handleSavePanelName(pnl.id)
+                            if (e.key === 'Escape') setEditingPanelId(null)
+                          }}
+                          autoFocus
+                          style={{ fontSize: 13, borderRadius: 6, background: B.surface3, color: B.text, border: `1px solid ${B.yellow}`, outline: 'none', padding: '2px 6px', width: 140 }}
+                        />
+                        <button onClick={() => handleSavePanelName(pnl.id)} style={{ background: B.yellow, color: B.bg, border: 'none', borderRadius: 6, padding: '2px 7px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>✓</button>
+                        <button onClick={() => setEditingPanelId(null)} style={{ background: 'none', border: 'none', color: B.textTer, fontSize: 14, cursor: 'pointer', padding: 0 }}>×</button>
+                      </>
+                    ) : (
+                      <>
+                        <span style={{ fontSize: 13, color: isDone ? B.green : B.text }}>{pnl.name}</span>
+                        {sqft && <span style={{ fontSize: 11, color: isDone ? B.green : acc }}>·{sqft.toFixed(1)}sqft</span>}
+                        {isAdmin && (
+                          <button
+                            onClick={() => { setEditingPanelId(pnl.id); setEditingPanelName(pnl.name) }}
+                            style={{ background: 'none', border: 'none', color: B.textTer, fontSize: 11, padding: '0 1px', cursor: 'pointer', lineHeight: 1 }}
+                          >✎</button>
+                        )}
+                        {isAdmin && (
+                          <button
+                            onClick={() => handleRemovePanel(pnl.id, pnl.name, proj.id)}
+                            style={{ background: 'none', border: 'none', color: B.textTer, fontSize: 14, padding: '0 0 0 2px', lineHeight: 1, cursor: 'pointer' }}
+                          >×</button>
+                        )}
+                      </>
                     )}
                   </div>
                 )
@@ -748,8 +788,8 @@ export default function Panels() {
               <div style={{ fontSize: 12, color: B.textTer, marginBottom: 10, lineHeight: 1.6 }}>
                 Paste from a spreadsheet or enter manually.
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 88px 88px 28px', gap: 5, marginBottom: 5 }}>
-                {['Panel name', 'Height', 'Width', ''].map((l, i) => (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 88px 88px 48px 28px', gap: 5, marginBottom: 5 }}>
+                {['Panel name', 'Height', 'Width', 'Rpt', ''].map((l, i) => (
                   <div
                     key={i}
                     style={{
@@ -771,7 +811,7 @@ export default function Panels() {
                   return (
                     <div
                       key={row.id}
-                      style={{ display: 'grid', gridTemplateColumns: '1fr 88px 88px 28px', gap: 5, alignItems: 'center' }}
+                      style={{ display: 'grid', gridTemplateColumns: '1fr 88px 88px 48px 28px', gap: 5, alignItems: 'center' }}
                     >
                       <input
                         value={row.name}
@@ -845,6 +885,27 @@ export default function Panels() {
                           </div>
                         )}
                       </div>
+                      <input
+                        type="number"
+                        min="1"
+                        max="20"
+                        value={row.repeat}
+                        placeholder="1"
+                        onChange={e =>
+                          setBulkRows(prev => prev.map((r, i) => (i === idx ? { ...r, repeat: e.target.value } : r)))
+                        }
+                        style={{
+                          padding: '8px 4px',
+                          fontSize: 12,
+                          borderRadius: 8,
+                          textAlign: 'center',
+                          background: row.repeat && parseInt(row.repeat) > 1 ? B.yellow + '22' : B.surface3,
+                          color: row.repeat && parseInt(row.repeat) > 1 ? B.yellow : B.text,
+                          border: 'none',
+                          outline: 'none',
+                          width: '100%',
+                        }}
+                      />
                       <button
                         onClick={() => setBulkRows(prev => prev.filter((_, i) => i !== idx))}
                         style={{
@@ -864,7 +925,7 @@ export default function Panels() {
                 })}
               </div>
               <button
-                onClick={() => setBulkRows(prev => [...prev, { id: ++_bulkId, name: '', h: '', w: '' }])}
+                onClick={() => setBulkRows(prev => [...prev, { id: ++_bulkId, name: '', h: '', w: '', repeat: '' }])}
                 style={{
                   background: 'transparent',
                   border: `1px dashed rgba(255,255,255,0.15)`,

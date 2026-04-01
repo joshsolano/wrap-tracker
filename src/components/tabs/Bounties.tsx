@@ -95,22 +95,24 @@ function parseMins(t: string): number {
   return h * 60 + (m || 0)
 }
 
-function condLabel(type: ConditionType, value: number, opt?: { social_action_type?: string | null }): string {
+function condLabel(type: ConditionType, value: number, opt?: { social_action_type?: string | null; operator?: string }): string {
+  const most = opt?.operator === 'most'
   switch (type) {
-    case 'sqft_total':       return `${value.toFixed(0)} commercial sqft`
-    case 'sqft_cc':          return `${value.toFixed(0)} CC sqft`
-    case 'panels':           return `${value} commercial panels`
-    case 'panels_cc':        return `${value} CC panels`
-    case 'sqft_per_hr':      return `${value} sqft/hr average`
-    case 'total_hours':      return `${value}h total time on clock`
-    case 'work_days':        return `${value} days worked`
-    case 'sqft_single_day':  return `${value} sqft in one day`
-    case 'panels_single_day':return `${value} panels in one day`
-    case 'best_sqft_hr_day': return `${value} sqft/hr in one day`
+    case 'sqft_total':       return most ? 'Most sqft (commercial)'        : `${value.toFixed(0)} commercial sqft`
+    case 'sqft_cc':          return most ? 'Most sqft (color change)'       : `${value.toFixed(0)} CC sqft`
+    case 'panels':           return most ? 'Most panels (commercial)'       : `${value} commercial panels`
+    case 'panels_cc':        return most ? 'Most panels (CC)'               : `${value} CC panels`
+    case 'sqft_per_hr':      return most ? 'Best avg sqft/hr'               : `${value} sqft/hr average`
+    case 'total_hours':      return most ? 'Most hours on clock'            : `${value}h total time on clock`
+    case 'work_days':        return most ? 'Most days worked'               : `${value} days worked`
+    case 'sqft_single_day':  return most ? 'Best single-day sqft'           : `${value} sqft in one day`
+    case 'panels_single_day':return most ? 'Most panels in one day'         : `${value} panels in one day`
+    case 'best_sqft_hr_day': return most ? 'Best day sqft/hr rate'          : `${value} sqft/hr in one day`
+    case 'panels_early':     return most ? 'Most panels finished early'     : `${value} panel${value !== 1 ? 's' : ''} finished before project due date`
+    case 'first_clock_in':   return most ? 'Most first-in days'             : `First to clock in ${value === 1 ? 'once' : value + ' days'}`
     case 'early_clock_in':   return `Clock in before ${minsToTime(value)}`
-    case 'first_clock_in':   return `First to clock in ${value === 1 ? 'once' : value + ' days'}`
-    case 'social_action':    return opt?.social_action_type === 'buy_coffee' ? 'Buy coffee for the crew ☕' : 'Buy lunch for the crew 🍔'
-    case 'panels_early':   return `${value} panel${value !== 1 ? 's' : ''} finished before project due date`
+    case 'social_action':      return opt?.social_action_type === 'buy_coffee' ? 'Buy coffee for the crew ☕' : 'Buy lunch for the crew 🍔'
+    case 'no_voided_panels':   return 'Zero voided panel entries'
   }
 }
 
@@ -129,11 +131,13 @@ function condValueStr(type: ConditionType, value: number): string {
     case 'early_clock_in':    return value + (value === 1 ? ' early start' : ' early starts')
     case 'first_clock_in':    return value + (value === 1 ? ' first-in day' : ' first-in days')
     case 'social_action':     return 'committed'
-    case 'panels_early':    return value + (value === 1 ? ' panel early' : ' panels early')
+    case 'panels_early':      return value + (value === 1 ? ' panel early' : ' panels early')
+    case 'no_voided_panels':  return 'clean record'
   }
 }
 
 function condTargetStr(cond: BountyCondition): string {
+  if (cond.operator === 'most') return 'most'
   const t = cond.condition_type as ConditionType
   switch (t) {
     case 'sqft_total':
@@ -149,7 +153,8 @@ function condTargetStr(cond: BountyCondition): string {
     case 'early_clock_in':    return 'before ' + minsToTime(cond.value)
     case 'first_clock_in':    return cond.value + (cond.value === 1 ? ' day' : ' days')
     case 'social_action':     return cond.confirmed_by_installer_id ? '✓ committed' : 'pending'
-    case 'panels_early':    return String(cond.value) + (cond.value === 1 ? ' panel' : ' panels')
+    case 'panels_early':      return String(cond.value) + (cond.value === 1 ? ' panel' : ' panels')
+    case 'no_voided_panels':  return 'no voided entries'
   }
 }
 
@@ -169,7 +174,8 @@ function condRemainingStr(type: ConditionType, remaining: number): string {
     case 'early_clock_in':    return 'clock in early once'
     case 'first_clock_in':    return `be first to clock in ${Math.ceil(remaining)} more day${Math.ceil(remaining) !== 1 ? 's' : ''}`
     case 'social_action':     return 'claim this commitment'
-    case 'panels_early':    return `${Math.ceil(remaining)} more panel${Math.ceil(remaining) !== 1 ? 's' : ''} before due date`
+    case 'panels_early':     return `${Math.ceil(remaining)} more panel${Math.ceil(remaining) !== 1 ? 's' : ''} before due date`
+    case 'no_voided_panels': return 'avoid voided entries'
   }
 }
 
@@ -418,12 +424,21 @@ function calcInstProg(
   conditions: BountyCondition[],
   logs: Log[],
   bounty: Bounty,
-  projects?: import('../../lib/types').Project[]
+  projects?: import('../../lib/types').Project[],
+  allLogs?: Log[]
 ): CondProg[] {
   const start = new Date(bounty.start_date + 'T00:00:00')
   const end   = bounty.end_date ? new Date(bounty.end_date + 'T23:59:59') : new Date()
 
   const inRange = logs.filter(r =>
+    r.installer_id === installerId &&
+    r.status === 'Complete' &&
+    r.start_ts &&
+    new Date(r.start_ts) >= start &&
+    new Date(r.start_ts) <= end
+  )
+
+  const allInRange = (allLogs ?? logs).filter(r =>
     r.installer_id === installerId &&
     r.status === 'Complete' &&
     r.start_ts &&
@@ -540,6 +555,13 @@ function calcInstProg(
         break
       }
 
+      case 'no_voided_panels': {
+        const voidedCount = allInRange.filter(r => r.voided).length
+        value  = voidedCount === 0 ? 1 : 0
+        target = 1
+        break
+      }
+
       case 'panels_early': {
         // Count each panel this installer personally finished before the project's due date.
         // Team projects are fair: you only get credit for panels YOU completed early.
@@ -563,31 +585,51 @@ function calcInstProg(
   })
 }
 
-function calcLeaderboard(bounty: Bounty, installers: Installer[], logs: Log[], projects?: import('../../lib/types').Project[]): InstProg[] {
+function calcLeaderboard(bounty: Bounty, installers: Installer[], logs: Log[], projects?: import('../../lib/types').Project[], allLogs?: Log[]): InstProg[] {
   const conditions = bounty.conditions ?? []
   const start = new Date(bounty.start_date + 'T00:00:00')
   const end   = bounty.end_date ? new Date(bounty.end_date + 'T23:59:59') : new Date()
-  return installers
-    .map(inst => {
-      const conds      = conditions.length > 0 ? calcInstProg(inst.id, conditions, logs, bounty, projects) : []
-      const overallPct = conds.length > 0 ? Math.min(...conds.map(c => c.pct)) : 0
-      const allDone    = conds.length > 0 && conds.every(c => c.done)
-      const inRange    = logs.filter(r =>
-        r.installer_id === inst.id && r.status === 'Complete' &&
-        r.start_ts && new Date(r.start_ts) >= start && new Date(r.start_ts) <= end
-      )
-      const latestTs = inRange.reduce<string | null>((latest, r) => {
-        const ts = r.finish_ts ?? r.start_ts
-        return !latest || ts > latest ? ts : latest
-      }, null)
-      return { installer: inst, conds, overallPct, allDone, latestTs }
+
+  // First pass: raw values + threshold pcts
+  const rawBoards = installers.map(inst => {
+    const conds   = conditions.length > 0 ? calcInstProg(inst.id, conditions, logs, bounty, projects, allLogs) : []
+    const inRange = logs.filter(r =>
+      r.installer_id === inst.id && r.status === 'Complete' &&
+      r.start_ts && new Date(r.start_ts) >= start && new Date(r.start_ts) <= end
+    )
+    const latestTs = inRange.reduce<string | null>((latest, r) => {
+      const ts = r.finish_ts ?? r.start_ts
+      return !latest || ts > latest ? ts : latest
+    }, null)
+    return { installer: inst, conds, latestTs }
+  })
+
+  // Second pass: for 'most' operator conditions, normalize pcts relative to max value
+  conditions.forEach((cond, ci) => {
+    if (cond.operator !== 'most') return
+    const maxVal = Math.max(...rawBoards.map(r => r.conds[ci]?.value ?? 0))
+    if (maxVal <= 0) return
+    rawBoards.forEach(r => {
+      if (!r.conds[ci]) return
+      const v = r.conds[ci].value
+      r.conds[ci] = { value: v, pct: v / maxVal, done: false }
+    })
+  })
+
+  const hasMostCond = conditions.some(c => c.operator === 'most')
+
+  return rawBoards
+    .map(r => {
+      const overallPct = r.conds.length > 0 ? Math.min(...r.conds.map(c => c.pct)) : 0
+      // allDone can never be true if any condition is 'most' (admin always awards)
+      const allDone    = !hasMostCond && r.conds.length > 0 && r.conds.every(c => c.done)
+      return { ...r, overallPct, allDone }
     })
     .filter(ip => ip.conds.some(c => c.value > 0) || ip.allDone)
     .sort((a, b) => {
       if (a.allDone && !b.allDone) return -1
       if (!a.allDone && b.allDone) return 1
       if (b.overallPct !== a.overallPct) return b.overallPct - a.overallPct
-      // Tie-break: whoever got there first wins (earlier latest log = they crossed the line sooner)
       if (a.latestTs && b.latestTs) return a.latestTs < b.latestTs ? -1 : 1
       return 0
     })
@@ -842,12 +884,14 @@ function ConditionRow({
   prog?: CondProg
   showRemaining?: boolean
 }) {
-  const type    = cond.condition_type as ConditionType
-  const label   = condLabel(type, cond.value)
-  const pct     = prog?.pct ?? 0
-  const done    = prog?.done ?? false
-  const nearWin = pct >= 0.75 && !done
-  const target  = type === 'early_clock_in' ? 1 : cond.value
+  const type      = cond.condition_type as ConditionType
+  const isMost    = cond.operator === 'most'
+  const label     = condLabel(type, cond.value, cond)
+  const pct       = prog?.pct ?? 0
+  const done      = prog?.done ?? false
+  const isLeading = isMost && pct >= 1
+  const nearWin   = pct >= 0.75 && !done && !isMost
+  const target    = type === 'early_clock_in' ? 1 : cond.value
   const remaining = prog ? target - prog.value : target
 
   return (
@@ -855,26 +899,42 @@ function ConditionRow({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
         <span style={{
           fontSize: 12,
-          color: done ? B.green : B.textSec,
+          color: done ? B.green : isLeading ? B.yellow : B.textSec,
           display: 'flex',
           gap: 7,
           alignItems: 'center',
         }}>
           {done
             ? <span style={{ color: B.green, fontWeight: 900, fontSize: 14, lineHeight: 1 }}>✓</span>
-            : <span style={{
-                width: 7, height: 7, borderRadius: '50%',
-                background: nearWin ? B.yellow : B.surface3,
-                display: 'inline-block', flexShrink: 0,
-                boxShadow: nearWin ? `0 0 6px ${B.yellow}88` : 'none',
-              }}
-              />
+            : isMost
+              ? <span style={{
+                  fontSize: 9, fontWeight: 800,
+                  color: isLeading ? B.yellow : B.textTer,
+                  background: isLeading ? B.yellow + '18' : B.surface3,
+                  border: `1px solid ${isLeading ? B.yellow + '44' : 'transparent'}`,
+                  borderRadius: 4, padding: '1px 5px',
+                  letterSpacing: '0.06em', textTransform: 'uppercase',
+                }}>
+                  {isLeading ? 'LEADING' : '★ MOST'}
+                </span>
+              : <span style={{
+                  width: 7, height: 7, borderRadius: '50%',
+                  background: nearWin ? B.yellow : B.surface3,
+                  display: 'inline-block', flexShrink: 0,
+                  boxShadow: nearWin ? `0 0 6px ${B.yellow}88` : 'none',
+                }}
+                />
           }
-          <span style={{ fontWeight: done ? 700 : 500 }}>{label}</span>
+          <span style={{ fontWeight: done || isLeading ? 700 : 500 }}>{label}</span>
         </span>
         {prog && (
-          <span style={{ fontSize: 11, fontWeight: 700, color: done ? B.green : nearWin ? B.yellow : B.textSec, flexShrink: 0 }}>
-            {condValueStr(type, prog.value)} / {condTargetStr(cond)}
+          <span style={{ fontSize: 11, fontWeight: 700, color: done ? B.green : isLeading ? B.yellow : nearWin ? B.yellow : B.textSec, flexShrink: 0 }}>
+            {isMost
+              ? condValueStr(type, prog.value)
+              : type === 'social_action'
+                ? condTargetStr(cond)
+                : `${condValueStr(type, prog.value)} / ${condTargetStr(cond)}`
+            }
           </span>
         )}
       </div>
@@ -887,16 +947,23 @@ function ConditionRow({
             width: `${Math.min(100, pct * 100)}%`,
             background: done
               ? B.green
-              : nearWin
+              : isLeading
                 ? `linear-gradient(90deg, ${B.yellow}, #FF9F0A)`
-                : `linear-gradient(90deg, ${B.yellow}88, ${B.yellow})`,
+                : nearWin
+                  ? `linear-gradient(90deg, ${B.yellow}, #FF9F0A)`
+                  : `linear-gradient(90deg, ${B.yellow}88, ${B.yellow})`,
             borderRadius: 4,
             transition: 'width 0.7s ease',
           }}
         />
       </div>
 
-      {showRemaining && prog && !done && remaining > 0 && pct > 0.4 && (
+      {isMost && prog && pct > 0 && (
+        <div style={{ fontSize: 10, color: isLeading ? B.yellow : B.textTer, marginTop: 4, fontWeight: isLeading ? 700 : 400 }}>
+          {isLeading ? 'You have the most — admin awards at close' : `${(pct * 100).toFixed(0)}% of leader`}
+        </div>
+      )}
+      {!isMost && showRemaining && prog && !done && remaining > 0 && pct > 0.4 && (
         <div style={{ fontSize: 10, color: nearWin ? B.yellow : B.textTer, marginTop: 4, fontWeight: nearWin ? 700 : 400 }}>
           {condRemainingStr(type, remaining)}
         </div>
@@ -1445,24 +1512,30 @@ function ActiveBountyCard({
   const tColor     = timeLeftColor(bounty.end_date)
   const dLeft      = daysLeftFromEnd(bounty.end_date)
   const isUrgent   = dLeft != null && dLeft <= 2 && dLeft >= 0
+  const isHot      = !bounty.winner_installer_id && isHotBounty(board)
   const leader     = board[0]
   const doneConds  = leader?.conds.filter(c => c.done).length ?? 0
 
   return (
     <div
+      className={isHot ? 'bounty-glow-pulse' : ''}
       onClick={onSelect}
       style={{
+        '--glow-color': B.orange + '44',
         background: B.surface,
-        border: `1px solid ${isUrgent ? B.red + '33' : B.border}`,
+        border: `1px solid ${isUrgent ? B.red + '33' : isHot ? B.orange + '44' : B.border}`,
         borderRadius: 16,
         padding: '16px 18px',
         marginBottom: compact ? 0 : 12,
         cursor: onSelect ? 'pointer' : 'default',
-      }}
+      } as React.CSSProperties}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
         <div style={{ flex: 1, marginRight: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5, flexWrap: 'wrap' }}>
+            {isHot && (
+              <span style={{ fontSize: 9, fontWeight: 900, color: B.orange, letterSpacing: '0.1em', textTransform: 'uppercase', background: B.orange + '18', border: `1px solid ${B.orange}44`, padding: '2px 6px', borderRadius: 4 }}>🔥 Hot</span>
+            )}
             {isParlay && (
               <span style={{ fontSize: 9, fontWeight: 700, color: B.purple, letterSpacing: '0.1em', textTransform: 'uppercase', background: B.purple + '18', padding: '2px 6px', borderRadius: 4 }}>⚡ Parlay</span>
             )}
@@ -1872,7 +1945,8 @@ function BountyDetailModal({
     early_clock_in:   (v) => `Must clock in before ${minsToTime(v)} on at least one day`,
     first_clock_in:   () => 'Be the earliest installer to clock in on any given day',
     social_action:    () => 'Public commitment — first to claim and lock it in gets credit for this leg',
-    panels_early:   () => 'Each panel you personally finished before its project due date counts — team projects are fair since you only get credit for your own work',
+    panels_early:     () => 'Each panel you personally finished before its project due date counts — team projects are fair since you only get credit for your own work',
+    no_voided_panels: () => 'You must have zero voided panel entries during the bounty period — one void and you\'re out',
   }
 
   return (
@@ -2087,168 +2161,52 @@ function BountyDetailModal({
   )
 }
 
-// ── demo data ─────────────────────────────────────────────────────────────────
-
-function generateDemoBounties(installers: Installer[]): Array<{
-  bounty: Bounty & { conditions: BountyCondition[] }
-  board: InstProg[]
-  facts: string[]
-}> {
-  if (!installers.length) return []
-  const [a, b, c] = installers
-
-  const d = (n: number) => {
-    const dt = new Date()
-    dt.setDate(dt.getDate() + n)
-    return dt.toISOString().slice(0, 10)
-  }
-
-  function mkCond(bountyId: string, idx: number, type: ConditionType, value: number): BountyCondition {
-    return { id: `dc-${bountyId}-${idx}`, bounty_id: bountyId, condition_type: type, operator: '>=', value, created_at: '' }
-  }
-
-  function mkBoard(rows: Array<[Installer | undefined, CondProg[]]>): InstProg[] {
-    return rows
-      .filter((r): r is [Installer, CondProg[]] => r[0] != null)
-      .map(([inst, conds]) => ({
-        installer: inst, conds,
-        overallPct: conds.length > 0 ? Math.min(...conds.map(c => c.pct)) : 0,
-        allDone: conds.length > 0 && conds.every(c => c.done),
-        latestTs: null,
-      }))
-  }
-
-  // 1. Speed Demon — best sqft/hr in one day
-  const db1: Bounty & { conditions: BountyCondition[] } = {
-    id: 'demo-1', title: 'Speed Demon', reward: '$50 cash',
-    start_date: d(-14), end_date: d(5), active: true,
-    winner_installer_id: null, paid: false, paid_at: null, created_at: '',
-    conditions: [mkCond('demo-1', 1, 'best_sqft_hr_day', 40)],
-  }
-  const bb1 = mkBoard([
-    [a, [{ value: 34.8, pct: 0.87, done: false }]],
-    [b, [{ value: 24.8, pct: 0.62, done: false }]],
-    [c, [{ value: 16.4, pct: 0.41, done: false }]],
-  ])
-
-  // 2. Volume King — sqft total
-  const db2: Bounty & { conditions: BountyCondition[] } = {
-    id: 'demo-2', title: 'Volume King', reward: '$100 cash + Friday off',
-    start_date: d(-10), end_date: d(12), active: true,
-    winner_installer_id: null, paid: false, paid_at: null, created_at: '',
-    conditions: [mkCond('demo-2', 1, 'sqft_total', 800)],
-  }
-  const bb2 = mkBoard([
-    [a, [{ value: 520, pct: 0.65, done: false }]],
-    [b, [{ value: 384, pct: 0.48, done: false }]],
-    [c, [{ value: 248, pct: 0.31, done: false }]],
-  ])
-
-  // 3. Early Bird Parlay — early clock-in + days worked
-  const db3: Bounty & { conditions: BountyCondition[] } = {
-    id: 'demo-3', title: 'Early Bird Parlay', reward: '$75 gift card',
-    start_date: d(-7), end_date: null, active: true,
-    winner_installer_id: null, paid: false, paid_at: null, created_at: '',
-    conditions: [mkCond('demo-3', 1, 'early_clock_in', 450), mkCond('demo-3', 2, 'work_days', 5)],
-  }
-  const bb3 = mkBoard([
-    [a, [{ value: 1, pct: 1.0, done: true  }, { value: 3, pct: 0.60, done: false }]],
-    [b, [{ value: 0, pct: 0.0, done: false }, { value: 2, pct: 0.40, done: false }]],
-    [c, [{ value: 1, pct: 1.0, done: true  }, { value: 1, pct: 0.20, done: false }]],
-  ])
-
-  // 4. Panel Machine — panels in one day (urgent: 2 days left)
-  const db4: Bounty & { conditions: BountyCondition[] } = {
-    id: 'demo-4', title: 'Panel Machine', reward: '$60 cash',
-    start_date: d(-20), end_date: d(2), active: true,
-    winner_installer_id: null, paid: false, paid_at: null, created_at: '',
-    conditions: [mkCond('demo-4', 1, 'panels_single_day', 5)],
-  }
-  const bb4 = mkBoard([
-    [a, [{ value: 4, pct: 0.80, done: false }]],
-    [b, [{ value: 3, pct: 0.60, done: false }]],
-    [c, [{ value: 2, pct: 0.40, done: false }]],
-  ])
-
-  // 5. The Big Month — completed, unpaid
-  const db5: Bounty & { conditions: BountyCondition[] } = {
-    id: 'demo-5', title: 'The Big Month', reward: '$200 cash',
-    start_date: d(-35), end_date: d(-5), active: false,
-    winner_installer_id: a?.id ?? null, paid: false, paid_at: null, created_at: '',
-    conditions: [mkCond('demo-5', 1, 'sqft_total', 1200)],
-  }
-  const bb5 = mkBoard([
-    [a, [{ value: 1248, pct: 1.04, done: true }]],
-    [b, [{ value: 744,  pct: 0.62, done: false }]],
-    [c, [{ value: 456,  pct: 0.38, done: false }]],
-  ])
-
-  // 5b. Speed Week — completed, already paid
-  const db5b: Bounty & { conditions: BountyCondition[] } = {
-    id: 'demo-5b', title: 'Speed Week', reward: '$75 cash',
-    start_date: d(-60), end_date: d(-30), active: false,
-    winner_installer_id: b?.id ?? null, paid: true,
-    paid_at: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000).toISOString(),
-    created_at: '',
-    conditions: [mkCond('demo-5b', 1, 'sqft_per_hr', 28)],
-  }
-  const bb5b = mkBoard([
-    [b, [{ value: 31.2, pct: 1.11, done: true }]],
-    [a, [{ value: 26.4, pct: 0.94, done: false }]],
-    [c, [{ value: 19.8, pct: 0.71, done: false }]],
-  ])
-
-  // 6. Hustle Parlay — sqft volume + efficiency
-  const db6: Bounty & { conditions: BountyCondition[] } = {
-    id: 'demo-6', title: 'Hustle Parlay', reward: '$150 cash + Monday off',
-    start_date: d(-5), end_date: d(21), active: true,
-    winner_installer_id: null, paid: false, paid_at: null, created_at: '',
-    conditions: [mkCond('demo-6', 1, 'sqft_total', 600), mkCond('demo-6', 2, 'sqft_per_hr', 25)],
-  }
-  const bb6 = mkBoard([
-    [a, [{ value: 420, pct: 0.70, done: false }, { value: 22.1, pct: 0.88, done: false }]],
-    [b, [{ value: 300, pct: 0.50, done: false }, { value: 18.5, pct: 0.74, done: false }]],
-    [c, [{ value: 180, pct: 0.30, done: false }, { value: 12.3, pct: 0.49, done: false }]],
-  ])
-
-  const all = [
-    { bounty: db1, board: bb1 },
-    { bounty: db2, board: bb2 },
-    { bounty: db3, board: bb3 },
-    { bounty: db4, board: bb4 },
-    { bounty: db5, board: bb5 },
-    { bounty: db5b, board: bb5b },
-    { bounty: db6, board: bb6 },
-  ]
-  return all.map(e => ({
-    ...e,
-    facts: e.bounty.active ? genFunFacts(e.bounty, e.board, []) : [],
-  }))
-}
-
 // ── form config ───────────────────────────────────────────────────────────────
 
-interface CondRow { id: number; type: ConditionType; valueStr: string; socialActionType?: string }
+interface CondRow { id: number; type: ConditionType; valueStr: string; socialActionType?: string; operator: string }
 
 interface StarterTemplate {
   title: string
   hint: string
   reward: string
   daysEnd: number | null
-  conditions: { type: ConditionType; valueStr: string; socialActionType?: string }[]
+  conditions: { type: ConditionType; valueStr: string; socialActionType?: string; operator?: string }[]
 }
 
 const STARTER_TEMPLATES: StarterTemplate[] = [
-  { title: 'First to 4,500 sqft', hint: '4,500 sqft commercial', reward: '$150 cash', daysEnd: 30, conditions: [{ type: 'sqft_total', valueStr: '4500' }] },
-  { title: '50 Panels', hint: '50 commercial panels', reward: '$125 cash', daysEnd: 30, conditions: [{ type: 'panels', valueStr: '50' }] },
-  { title: 'Early Bird Sprint', hint: 'Clock in before 7:30 AM', reward: '$75 gift card', daysEnd: 14, conditions: [{ type: 'early_clock_in', valueStr: '07:30' }] },
-  { title: 'Speed + Volume Parlay', hint: '600 sqft + 25 sqft/hr avg', reward: '$200 cash', daysEnd: 30, conditions: [{ type: 'sqft_total', valueStr: '600' }, { type: 'sqft_per_hr', valueStr: '25' }] },
-  { title: 'Project Grinder', hint: '20 days worked', reward: '$100 cash', daysEnd: 30, conditions: [{ type: 'work_days', valueStr: '20' }] },
-  { title: 'First Mover Parlay', hint: 'First in 5 days + 500 sqft', reward: '$100 cash + Monday off', daysEnd: 30, conditions: [{ type: 'first_clock_in', valueStr: '5' }, { type: 'sqft_total', valueStr: '500' }] },
-  { title: 'Speed Demon', hint: 'Best day: 40 sqft/hr', reward: '$50 cash', daysEnd: 14, conditions: [{ type: 'best_sqft_hr_day', valueStr: '40' }] },
-  { title: 'Big Month', hint: '1,000 sqft commercial', reward: '$200 cash + Friday off', daysEnd: 30, conditions: [{ type: 'sqft_total', valueStr: '1000' }] },
-  { title: 'Buy Lunch Parlay', hint: '30 panels + social commit', reward: '$75 cash', daysEnd: 30, conditions: [{ type: 'panels', valueStr: '30' }, { type: 'social_action', valueStr: '1', socialActionType: 'buy_lunch' }] },
-  { title: 'CC Crusher', hint: '800 sqft color change', reward: '$100 cash', daysEnd: 30, conditions: [{ type: 'sqft_cc', valueStr: '800' }] },
+  // 1 — volume milestone, pure individual
+  { title: 'First to 4,500 sqft', hint: '4,500 sqft commercial — solid month target', reward: '$150 cash', daysEnd: 30, conditions: [{ type: 'sqft_total', valueStr: '4500' }] },
+  // 2 — panel count milestone, pure individual
+  { title: 'Panel Grinder', hint: '50 commercial panels in a month', reward: '$125 cash', daysEnd: 30, conditions: [{ type: 'panels', valueStr: '50' }] },
+  // 3 — early + volume parlay (first_clock_in approximates 8 early-start days)
+  { title: 'Early Bird Parlay', hint: 'First to clock in 8 days + 3,000 sqft', reward: '$125 cash', daysEnd: 30, conditions: [{ type: 'first_clock_in', valueStr: '8' }, { type: 'sqft_total', valueStr: '3000' }] },
+  // 4 — consistency + daily output parlay
+  { title: 'Daily Grind', hint: '10 days worked + 250 sqft best day', reward: '$150 cash', daysEnd: 14, conditions: [{ type: 'work_days', valueStr: '10' }, { type: 'sqft_single_day', valueStr: '250' }] },
+  // 5 — efficiency + volume parlay
+  { title: 'Speed + Volume', hint: '25 sqft/hr avg + 2,500 sqft total', reward: '$150 cash', daysEnd: 30, conditions: [{ type: 'sqft_per_hr', valueStr: '25' }, { type: 'sqft_total', valueStr: '2500' }] },
+  // 6 — hours on clock (good for slower jobs / new installers)
+  { title: 'Clock the Hours', hint: '15 total hours on clock', reward: '$75 cash', daysEnd: 14, conditions: [{ type: 'total_hours', valueStr: '15' }] },
+  // 7 — rolling 10-day sprint (fixed threshold in tight window)
+  { title: '10-Day Sprint', hint: 'First to 1,500 sqft in 10 days', reward: '$125 cash', daysEnd: 10, conditions: [{ type: 'sqft_total', valueStr: '1500' }] },
+  // 8 — first mover + volume parlay
+  { title: 'First Mover Parlay', hint: 'First to clock in 6 days + 2,500 sqft', reward: '$125 cash', daysEnd: 30, conditions: [{ type: 'first_clock_in', valueStr: '6' }, { type: 'sqft_total', valueStr: '2500' }] },
+  // 9 — early clock-in + daily sqft parlay (low-stakes, habit-building)
+  { title: 'Morning Crew', hint: 'Clock in before 8 AM + 350 sqft total', reward: '$50 cash', daysEnd: 14, conditions: [{ type: 'early_clock_in', valueStr: '08:00' }, { type: 'sqft_total', valueStr: '350' }] },
+  // 10 — weekly volume (short window, anyone can win)
+  { title: 'Best Week', hint: 'First to 800 sqft in one week', reward: '$75 cash', daysEnd: 7, conditions: [{ type: 'sqft_total', valueStr: '800' }] },
+  // 11 — first in + big day parlay
+  { title: 'First In + Best Day', hint: 'First to clock in 3 days + 200 sqft single day', reward: '$75 cash', daysEnd: 14, conditions: [{ type: 'first_clock_in', valueStr: '3' }, { type: 'sqft_single_day', valueStr: '200' }] },
+  // 12 — 5 early starts in one week (short window creates urgency)
+  { title: '5-Day Early Week', hint: 'First to clock in 5 days in one week', reward: '$75 cash', daysEnd: 7, conditions: [{ type: 'first_clock_in', valueStr: '5' }] },
+  // ── competitive "most" templates ──
+  // 13 — most sqft this week (open competition, anyone can win)
+  { title: 'Most Sqft This Week', hint: 'Whoever installs the most sqft wins', reward: '$75 cash', daysEnd: 7, conditions: [{ type: 'sqft_total', valueStr: '', operator: 'most' }] },
+  // 14 — most sqft this month
+  { title: 'Most Sqft This Month', hint: 'Whoever installs the most sqft wins', reward: '$150 cash', daysEnd: 30, conditions: [{ type: 'sqft_total', valueStr: '', operator: 'most' }] },
+  // 15 — most panels this month
+  { title: 'Most Panels This Month', hint: 'Whoever completes the most panels wins', reward: '$125 cash', daysEnd: 30, conditions: [{ type: 'panels', valueStr: '', operator: 'most' }] },
+  // 16 — best avg sqft/hr this month
+  { title: 'Best Efficiency', hint: 'Highest avg sqft/hr across all jobs wins', reward: '$100 cash', daysEnd: 30, conditions: [{ type: 'sqft_per_hr', valueStr: '', operator: 'most' }] },
 ]
 
 const COND_GROUPS: { label: string; types: { type: ConditionType; label: string; placeholder: string; help: string }[] }[] = [
@@ -2296,6 +2254,12 @@ const COND_GROUPS: { label: string; types: { type: ConditionType; label: string;
       { type: 'social_action', label: 'Social Action', placeholder: '', help: 'Winner publicly commits to a social action (buy lunch/coffee)' },
     ],
   },
+  {
+    label: 'Clean Record',
+    types: [
+      { type: 'no_voided_panels', label: 'No Voided Panels', placeholder: '', help: 'Zero voided panel entries during the bounty period — one void disqualifies you' },
+    ],
+  },
 ]
 
 const ALL_COND_CONFIG = COND_GROUPS.flatMap(g => g.types)
@@ -2303,22 +2267,20 @@ const ALL_COND_CONFIG = COND_GROUPS.flatMap(g => g.types)
 // ── main component ────────────────────────────────────────────────────────────
 
 export default function Bounties() {
-  const { logs, installers, projects } = useAppData()
+  const { logs, allLogs, installers, projects } = useAppData()
   const { isAdmin, installer: me, isGuest } = useAuth()
   const { bounties, loading, createBounty, deleteBounty, toggleActive, awardWin, markPaid, markUnpaid, confirmSocialAction } = useBounties()
 
   const condIdRef = useRef(0)
   function newCondRow(type: ConditionType = 'sqft_total'): CondRow {
-    return { id: ++condIdRef.current, type, valueStr: '' }
+    return { id: ++condIdRef.current, type, valueStr: '', operator: '>=' }
   }
 
   const [showCreate,      setShowCreate]      = useState(false)
   const [testWinOpen,     setTestWinOpen]     = useState(false)
-  const [showDemo,        setShowDemo]        = useState(true)
   const [toast,           setToast]           = useState('')
   const [selectedBountyId, setSelectedBountyId] = useState<string | null>(null)
 
-  const demoBounties = useMemo(() => generateDemoBounties(installers), [installers])
   const [warn,       setWarn]       = useState<WarnConfig | null>(null)
   const [saving,     setSaving]     = useState(false)
 
@@ -2335,7 +2297,7 @@ export default function Bounties() {
   const boardsByBounty = useMemo(() => {
     const m = new Map<string, { board: InstProg[]; facts: string[] }>()
     for (const b of bounties) {
-      const board = calcLeaderboard(b, installers, logs, projects)
+      const board = calcLeaderboard(b, installers, logs, projects, allLogs)
       const facts = genFunFacts(b, board, logs)
       m.set(b.id, { board, facts })
     }
@@ -2349,12 +2311,10 @@ export default function Bounties() {
     const real = bounties.find(b => b.id === selectedBountyId)
     if (real) {
       const { board, facts } = boardsByBounty.get(real.id) ?? { board: [], facts: [] }
-      return { bounty: real, board, facts, isDemo: false }
+      return { bounty: real, board, facts }
     }
-    const demo = demoBounties.find(e => e.bounty.id === selectedBountyId)
-    if (demo) return { bounty: demo.bounty as Bounty, board: demo.board, facts: demo.facts, isDemo: true }
     return null
-  }, [selectedBountyId, bounties, boardsByBounty, demoBounties])
+  }, [selectedBountyId, bounties, boardsByBounty])
 
   const todayStr = new Date().toDateString()
 
@@ -2399,36 +2359,21 @@ export default function Bounties() {
     })
   }
 
+  // CompletedCard already has inline two-step confirmation — call DB directly here
   function handleMarkPaid(bounty: Bounty) {
     const winnerName = bounty.winner_installer_id
       ? (installers.find(i => i.id === bounty.winner_installer_id)?.name ?? 'winner')
       : 'winner'
-    setWarn({
-      title: 'Confirm payout',
-      body: `Pay ${winnerName} ${bounty.reward} for "${bounty.title}"? This cannot be undone without admin action.`,
-      ok: '✓ Confirm Paid', cancel: 'Cancel',
-      onOk: async () => {
-        const { error } = await markPaid(bounty.id)
-        if (error) setToast('Error: ' + error)
-        else setToast(`Payout recorded for ${winnerName}`)
-      },
+    markPaid(bounty.id).then(({ error }) => {
+      if (error) setToast('Error: ' + error)
+      else setToast(`Payout recorded for ${winnerName}`)
     })
   }
 
   function handleMarkUnpaid(bounty: Bounty) {
-    const winnerName = bounty.winner_installer_id
-      ? (installers.find(i => i.id === bounty.winner_installer_id)?.name ?? 'winner')
-      : 'winner'
-    setWarn({
-      title: 'Reverse payout record?',
-      body: `This will mark "${bounty.title}" as unpaid and clear the payment date for ${winnerName}. Only do this if the payment was logged by mistake.`,
-      ok: 'Yes, mark unpaid', cancel: 'Cancel',
-      danger: true,
-      onOk: async () => {
-        const { error } = await markUnpaid(bounty.id)
-        if (error) setToast('Error: ' + error)
-        else setToast('Payout record cleared')
-      },
+    markUnpaid(bounty.id).then(({ error }) => {
+      if (error) setToast('Error: ' + error)
+      else setToast('Payout record cleared')
     })
   }
 
@@ -2444,10 +2389,12 @@ export default function Bounties() {
     })
   }
 
-  function condValidationError(type: ConditionType, valueStr: string, durationDays: number | null): string | null {
-    const v = type === 'early_clock_in' ? 1 : parseFloat(valueStr)
-    if (!valueStr && type !== 'social_action') return null // blank handled separately
+  function condValidationError(type: ConditionType, valueStr: string, durationDays: number | null, operator: string): string | null {
+    if (operator === 'most') return null          // no fixed target needed
     if (type === 'social_action') return null
+    if (type === 'no_voided_panels') return null
+    const v = type === 'early_clock_in' ? 1 : parseFloat(valueStr)
+    if (!valueStr) return null                   // blank handled separately
     if (isNaN(v) || v <= 0) return 'Value must be greater than 0'
     if (durationDays !== null) {
       if (type === 'work_days' && v > durationDays)
@@ -2462,13 +2409,13 @@ export default function Bounties() {
     if (!fTitle.trim() || !fReward.trim() || !fStart) {
       setToast('Title, reward, and start date are required'); return
     }
-    if (fConds.some(c => c.type !== 'social_action' && !c.valueStr)) {
+    if (fConds.some(c => c.operator !== 'most' && c.type !== 'social_action' && c.type !== 'no_voided_panels' && !c.valueStr)) {
       setToast('All conditions need a value'); return
     }
     const durDays = fEnd
       ? Math.round((new Date(fEnd).getTime() - new Date(fStart + 'T00:00:00').getTime()) / 86400000)
       : null
-    const condErrors = fConds.map(c => condValidationError(c.type, c.valueStr, durDays)).filter(Boolean)
+    const condErrors = fConds.map(c => condValidationError(c.type, c.valueStr, durDays, c.operator)).filter(Boolean)
     if (condErrors.length) { setToast(condErrors[0]!); return }
     setSaving(true)
     const { error } = await createBounty({
@@ -2478,8 +2425,11 @@ export default function Bounties() {
       endDate:   fEnd || null,
       conditions: fConds.map(c => ({
         conditionType: c.type,
-        operator: '>=',
-        value: c.type === 'early_clock_in' ? parseMins(c.valueStr) : parseFloat(c.valueStr) || 1,
+        operator: c.operator,
+        value: c.operator === 'most' ? 0
+          : c.type === 'early_clock_in' ? parseMins(c.valueStr)
+          : c.type === 'no_voided_panels' ? 1
+          : parseFloat(c.valueStr) || 1,
         socialActionType: c.type === 'social_action' ? (c.socialActionType ?? 'buy_lunch') : undefined,
       })),
     })
@@ -2511,14 +2461,14 @@ export default function Bounties() {
           board={selectedEntry.board}
           facts={selectedEntry.facts}
           installers={installers}
-          logs={selectedEntry.isDemo ? [] : logs}
+          logs={logs}
           meInstaller={me}
-          isAdmin={selectedEntry.isDemo ? false : isAdmin}
+          isAdmin={isAdmin}
           isGuest={isGuest}
           onClose={() => setSelectedBountyId(null)}
-          onAward={ip => { if (!selectedEntry.isDemo) handleAward(selectedEntry.bounty, ip) }}
-          onMarkPaid={() => { if (!selectedEntry.isDemo) handleMarkPaid(selectedEntry.bounty) }}
-          onMarkUnpaid={() => { if (!selectedEntry.isDemo) handleMarkUnpaid(selectedEntry.bounty) }}
+          onAward={ip => handleAward(selectedEntry.bounty, ip)}
+          onMarkPaid={() => handleMarkPaid(selectedEntry.bounty)}
+          onMarkUnpaid={() => handleMarkUnpaid(selectedEntry.bounty)}
           onConfirmSocial={confirmSocialAction}
         />
       )}
@@ -2654,6 +2604,7 @@ export default function Bounties() {
                           type: c.type,
                           valueStr: c.valueStr,
                           socialActionType: c.socialActionType,
+                          operator: c.operator ?? '>=',
                         })))
                       }}
                       style={{
@@ -2794,6 +2745,14 @@ export default function Bounties() {
                           <option value="buy_lunch">Buy lunch 🍔</option>
                           <option value="buy_coffee">Buy coffee ☕</option>
                         </select>
+                      ) : c.type === 'no_voided_panels' ? (
+                        <div style={{
+                          fontSize: 11, color: B.textTer, fontStyle: 'italic',
+                          padding: '10px 12px', background: B.surface3, borderRadius: 10,
+                          flex: 'none', whiteSpace: 'nowrap',
+                        }}>
+                          binary — pass/fail
+                        </div>
                       ) : c.type === 'early_clock_in' ? (
                         <input
                           type="time"
@@ -2803,6 +2762,14 @@ export default function Bounties() {
                           ))}
                           style={{ ...inp, width: 110, flex: 'none', colorScheme: 'dark' }}
                         />
+                      ) : c.operator === 'most' ? (
+                        <div style={{
+                          fontSize: 11, color: B.textTer, fontStyle: 'italic',
+                          padding: '10px 12px', background: B.surface3, borderRadius: 10,
+                          flex: 'none', whiteSpace: 'nowrap',
+                        }}>
+                          no target
+                        </div>
                       ) : (
                         <input
                           type="number"
@@ -2813,6 +2780,29 @@ export default function Bounties() {
                           ))}
                           style={{ ...inp, width: 88, flex: 'none' }}
                         />
+                      )}
+
+                      {/* Operator toggle — not shown for binary conditions */}
+                      {c.type !== 'social_action' && c.type !== 'early_clock_in' && c.type !== 'no_voided_panels' && (
+                        <div style={{ display: 'flex', borderRadius: 8, overflow: 'hidden', border: `1px solid ${B.border}`, flexShrink: 0 }}>
+                          {(['>=', 'most'] as const).map(op => (
+                            <button
+                              key={op}
+                              onClick={() => setFConds(prev => prev.map((r, i) =>
+                                i === idx ? { ...r, operator: op, valueStr: op === 'most' ? '' : r.valueStr } : r
+                              ))}
+                              style={{
+                                fontSize: 10, fontWeight: 700,
+                                color: c.operator === op ? B.bg : B.textTer,
+                                background: c.operator === op ? B.yellow : 'transparent',
+                                border: 'none', padding: '0 9px', height: 38, cursor: 'pointer',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {op === '>=' ? 'First to' : 'Most'}
+                            </button>
+                          ))}
+                        </div>
                       )}
 
                       {fConds.length > 1 && (
@@ -2826,10 +2816,15 @@ export default function Bounties() {
                       const durDays = fEnd
                         ? Math.round((new Date(fEnd).getTime() - new Date(fStart + 'T00:00:00').getTime()) / 86400000)
                         : null
-                      const err = c.valueStr ? condValidationError(c.type, c.valueStr, durDays) : null
+                      const err = c.valueStr ? condValidationError(c.type, c.valueStr, durDays, c.operator) : null
                       if (err) return (
                         <div style={{ fontSize: 11, color: B.red, marginTop: 4, marginLeft: 2, fontWeight: 600 }}>
                           ⚠ {err}
+                        </div>
+                      )
+                      if (c.operator === 'most') return (
+                        <div style={{ fontSize: 10, color: B.textTer, marginTop: 3, marginLeft: 2 }}>
+                          Whoever has the most at end of window — admin awards the winner
                         </div>
                       )
                       if (cfg && c.type !== 'social_action') return (
@@ -2945,86 +2940,6 @@ export default function Bounties() {
       {/* Redemption instructions */}
       <RedemptionCard />
 
-      {/* Demo previews */}
-      {demoBounties.length > 0 && (
-        <>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, marginBottom: 12 }}>
-            <div style={{ fontSize: 9, fontWeight: 800, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.12em' }}>
-              ⚗ Demo Previews
-            </div>
-            <div style={{ flex: 1, height: 1, background: B.border }} />
-            <button
-              onClick={() => setShowDemo(v => !v)}
-              style={{ fontSize: 10, color: B.textTer, background: 'none', border: `1px solid ${B.border}`, borderRadius: 6, padding: '2px 8px', cursor: 'pointer', fontWeight: 600 }}
-            >
-              {showDemo ? 'Hide' : 'Show'}
-            </button>
-          </div>
-
-          {showDemo && (
-            <>
-              <div style={{
-                background: `${B.orange}0A`, border: `1px dashed ${B.orange}28`,
-                borderRadius: 10, padding: '9px 14px', marginBottom: 16,
-                fontSize: 11, color: B.textTer, lineHeight: 1.6,
-              }}>
-                Example bounties showing UI previews — not connected to real data.
-              </div>
-
-              {/* Featured demo (Speed Demon) */}
-              <FeaturedBountyCard
-                bounty={demoBounties[0].bounty}
-                board={demoBounties[0].board}
-                facts={demoBounties[0].facts}
-                isAdmin={false}
-                onAward={() => {}}
-                onToggle={() => {}}
-                onDelete={() => {}}
-                meInstaller={me}
-                onSelect={() => setSelectedBountyId(demoBounties[0].bounty.id)}
-              />
-
-              {/* Active demos */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Active</div>
-                <div style={{ flex: 1, height: 1, background: B.border }} />
-              </div>
-              <div className="bounty-active-grid">
-                {demoBounties.slice(1).filter(e => e.bounty.active).map(e => (
-                  <ActiveBountyCard
-                    key={e.bounty.id}
-                    bounty={e.bounty}
-                    board={e.board}
-                    facts={e.facts}
-                    isAdmin={false}
-                    onAward={() => {}}
-                    onToggle={() => {}}
-                    onDelete={() => {}}
-                    compact
-                    onSelect={() => setSelectedBountyId(e.bounty.id)}
-                  />
-                ))}
-              </div>
-
-              {/* Completed demo */}
-              {demoBounties.some(e => !e.bounty.active) && (
-                <>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, marginTop: 8 }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Hall of Fame</div>
-                    <div style={{ flex: 1, height: 1, background: B.border }} />
-                  </div>
-                  {demoBounties.filter(e => !e.bounty.active).map(e => {
-                    const w = e.bounty.winner_installer_id
-                      ? installers.find(i => i.id === e.bounty.winner_installer_id) ?? null
-                      : null
-                    return <CompletedCard key={e.bounty.id} bounty={e.bounty} winner={w} isAdmin={true} onMarkPaid={() => {}} onMarkUnpaid={() => {}} onSelect={() => setSelectedBountyId(e.bounty.id)} />
-                  })}
-                </>
-              )}
-            </>
-          )}
-        </>
-      )}
     </div>
   )
 }

@@ -1,12 +1,13 @@
-import React, { createContext, useContext, useMemo } from 'react'
+import React, { createContext, useContext, useEffect, useMemo } from 'react'
 import { useLogs }             from '../hooks/useLogs'
 import { useActiveJobs }       from '../hooks/useActiveJobs'
 import { useProjects }         from '../hooks/useProjects'
 import { useInstallers }       from '../hooks/useInstallers'
+import { supabase }            from '../lib/supabase'
 import type { Log, ActiveJob, Project, Panel, Installer } from '../lib/types'
 
 type AppData = {
-  logs: Log[]; activeJobs: ActiveJob[]; projects: Project[]; installers: Installer[]
+  logs: Log[]; allLogs: Log[]; activeJobs: ActiveJob[]; projects: Project[]; installers: Installer[]
   loading: boolean; anyError: string | null
   getProject: (id: string) => Project | undefined
   getPanel: (id: string) => Panel | undefined
@@ -35,6 +36,24 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   function refetchAll() {
     logsH.fetch(); jobsH.fetch(); projsH.fetch(); instsH.fetch()
   }
+
+  // Single consolidated Realtime channel for all tables
+  useEffect(() => {
+    const channel = supabase
+      .channel('app_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'logs' },        () => logsH.fetch())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'active_jobs' }, () => jobsH.fetch())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' },    () => projsH.fetch())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'panels' },      () => projsH.fetch())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'installers' },  () => instsH.fetch())
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR' || status === 'CLOSED') {
+          setTimeout(refetchAll, 3000)
+        }
+      })
+    return () => { supabase.removeChannel(channel) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <Ctx.Provider value={{

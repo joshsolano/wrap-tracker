@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Project, Panel, ProjectType } from '../lib/types'
 
@@ -6,8 +6,6 @@ export function useProjects() {
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
-
   // Full fetch — only used on mount and reconnect
   const fetch = useCallback(async () => {
     const { data, error: err } = await supabase
@@ -18,112 +16,14 @@ export function useProjects() {
     if (err) { setError(err.message); return }
     const sorted = (data ?? []).map(p => ({
       ...p,
-      panels: ((p.panels ?? []) as Panel[]).sort((a, b) => a.sort_order - b.sort_order),
+      panels: ((p.panels ?? []) as Panel[]).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })),
     }))
     setProjects(sorted as Project[])
     setError(null)
     setLoading(false)
   }, [])
 
-  // Fetch a single project with its panels — used for incremental updates
-  const fetchOne = useCallback(async (projectId: string): Promise<Project | null> => {
-    const { data } = await supabase
-      .from('projects')
-      .select('*, panels(*)')
-      .eq('id', projectId)
-      .eq('archived', false)
-      .single()
-    if (!data) return null
-    return {
-      ...data,
-      panels: ((data.panels ?? []) as Panel[]).sort((a, b) => a.sort_order - b.sort_order),
-    } as Project
-  }, [])
-
-  useEffect(() => {
-    fetch()
-
-    channelRef.current = supabase
-      .channel('projects_panels_changes')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'projects' },
-        async (payload) => {
-          const proj = await fetchOne(payload.new.id)
-          if (!proj) return
-          setProjects(prev => {
-            if (prev.find(p => p.id === proj.id)) return prev
-            return [proj, ...prev]
-          })
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'projects' },
-        async (payload) => {
-          // If archived, remove from list
-          if (payload.new.archived) {
-            setProjects(prev => prev.filter(p => p.id !== payload.new.id))
-            return
-          }
-          const proj = await fetchOne(payload.new.id)
-          if (!proj) return
-          setProjects(prev => prev.map(p => p.id === proj.id ? proj : p))
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'DELETE', schema: 'public', table: 'projects' },
-        (payload) => {
-          setProjects(prev => prev.filter(p => p.id !== payload.old.id))
-        }
-      )
-      // Panels: re-fetch the parent project so panel list stays consistent
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'panels' },
-        async (payload) => {
-          const proj = await fetchOne(payload.new.project_id)
-          if (!proj) return
-          setProjects(prev => prev.map(p => p.id === proj.id ? proj : p))
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'panels' },
-        async (payload) => {
-          const proj = await fetchOne(payload.new.project_id)
-          if (!proj) return
-          setProjects(prev => prev.map(p => p.id === proj.id ? proj : p))
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'DELETE', schema: 'public', table: 'panels' },
-        async (payload) => {
-          // payload.old only has the id and project_id if replica identity is set;
-          // fall back to patching state directly if project_id is available
-          if (payload.old.project_id) {
-            const proj = await fetchOne(payload.old.project_id)
-            if (proj) { setProjects(prev => prev.map(p => p.id === proj.id ? proj : p)); return }
-          }
-          // Fallback: remove the panel from whichever project holds it
-          setProjects(prev => prev.map(p => ({
-            ...p,
-            panels: (p.panels ?? []).filter(pnl => pnl.id !== payload.old.id),
-          })))
-        }
-      )
-      .subscribe((status) => {
-        if (status === 'CHANNEL_ERROR' || status === 'CLOSED') {
-          setTimeout(fetch, 2000)
-        }
-      })
-
-    return () => {
-      if (channelRef.current) supabase.removeChannel(channelRef.current)
-    }
-  }, [fetch, fetchOne])
+  useEffect(() => { fetch() }, [fetch])
 
   async function createProject(params: { name: string; projectType: ProjectType; dueDate?: string }): Promise<{ error: string | null }> {
     const { error: err } = await supabase.from('projects').insert({
@@ -192,6 +92,15 @@ export function useProjects() {
     return { inserted, skipped: rows.length - inserted, error: null }
   }
 
+  async function updatePanel(panelId: string, name: string): Promise<{ error: string | null }> {
+    const { error: err } = await supabase.from('panels').update({ name: name.trim() }).eq('id', panelId)
+    if (err) {
+      if (err.code === '23505') return { error: `"${name}" already exists in this project.` }
+      return { error: err.message }
+    }
+    return { error: null }
+  }
+
   async function removePanel(panelId: string, projectId: string): Promise<{ error: string | null }> {
     const { error: err } = await supabase.from('panels').delete().eq('id', panelId)
     if (err) return { error: err.message }
@@ -202,6 +111,6 @@ export function useProjects() {
   return {
     projects, loading, error, fetch,
     createProject, updateProject, updateProjectType, updateDueDate, archiveProject,
-    addPanel, addPanelsBulk, removePanel,
+    addPanel, addPanelsBulk, updatePanel, removePanel,
   }
 }

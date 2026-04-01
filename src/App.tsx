@@ -21,7 +21,7 @@ const ALL_TABS = ['Clock In', 'Dashboard', 'Log', 'Projects', 'Leaderboard', 'Bo
 type Tab = typeof ALL_TABS[number]
 
 function AppShell() {
-  const { signOut, installer: me, isAdmin, isGuest } = useAuth()
+  const { signOut, installer: me, manager, isAdmin, isGuest } = useAuth()
   const { installers, activeJobs } = useAppData()
   const [tab, setTab] = useState<Tab>('Clock In')
   const [tabFade, setTabFade] = useState(true)
@@ -44,14 +44,12 @@ function AppShell() {
     }, 120)
   }
 
-  const { demoEnabled } = useDemoFeatures()
+  useDemoFeatures()
 
   const birthday = installers.find(i => isBirthday(i.birthday))
   const activeCount = activeJobs.length
 
-  const tabs: Tab[] = isAdmin && demoEnabled
-    ? [...ALL_TABS]
-    : ALL_TABS.filter(t => t !== 'Bounties')
+  const tabs: Tab[] = [...ALL_TABS]
 
   const tabContent: Record<Tab, React.ReactElement> = {
     'Clock In': <ClockIn />,
@@ -198,6 +196,22 @@ function AppShell() {
                 Sign out
               </button>
             </div>
+          ) : manager ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+              <div style={{ width: 28, height: 28, borderRadius: '50%', background: B.surface3, border: `1px solid ${B.yellow}66`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: B.yellow, flexShrink: 0 }}>
+                {manager.name.charAt(0)}
+              </div>
+              <div style={{ lineHeight: 1.25 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: B.text }}>{manager.name.split(' ')[0]}</div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: B.yellow, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Manager</div>
+              </div>
+              <button
+                onClick={signOut}
+                style={{ fontSize: 11, color: B.textTer, background: 'none', border: `1px solid ${B.border}`, borderRadius: 8, padding: '4px 8px', cursor: 'pointer', fontWeight: 600, flexShrink: 0 }}
+              >
+                Sign out
+              </button>
+            </div>
           ) : null}
         </div>
 
@@ -236,7 +250,7 @@ function AppShell() {
 }
 
 function AppGate() {
-  const { installer, isGuest, loading } = useAuth()
+  const { installer, manager, isGuest, loading } = useAuth()
 
   if (loading) {
     return (
@@ -256,7 +270,7 @@ function AppGate() {
     )
   }
 
-  if (!installer && !isGuest) {
+  if (!installer && !manager && !isGuest) {
     return <LoginScreen />
   }
 
