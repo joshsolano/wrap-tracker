@@ -30,28 +30,12 @@ function ProfilesList({ onSelect }: { onSelect: (id: string) => void }) {
     return m
   }, [completeLogs, installers])
 
-  const shopAvg = useMemo(() => {
-    const comLogs = completeLogs.filter(r => !r.is_color_change)
-    const totalSqft = comLogs.reduce((s, r) => s + (r.sqft ?? 0), 0)
-    const totalMins = comLogs.reduce((s, r) => s + (r.mins ?? 0), 0)
-    return totalMins > 0 ? totalSqft / (totalMins / 60) : null
-  }, [completeLogs])
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {shopAvg && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: B.surface, borderRadius: 12, padding: '10px 16px', border: `1px solid ${B.border}`, marginBottom: 4 }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Shop avg sqft/hr</span>
-          <span style={{ fontSize: 16, fontWeight: 800, color: B.yellow }}>{shopAvg.toFixed(1)}</span>
-        </div>
-      )}
       {installers.map((inst, i) => {
         const stats = boardSummary.get(inst.id) ?? { sqft: 0, panels: 0, mins: 0, rates: [] }
         const avgSqftHr = stats.rates.length ? stats.rates.reduce((a, b) => a + b, 0) / stats.rates.length : null
         const isBday = isBirthday(inst.birthday)
-        const delta = avgSqftHr && shopAvg ? avgSqftHr - shopAvg : null
-        const isAbove = delta !== null && delta > 0
-        const isBelow = delta !== null && delta < 0
         return (
           <button key={inst.id} onClick={() => onSelect(inst.id)}
             style={{ background: B.surface, borderRadius: 16, padding: '16px 18px', border: `1.5px solid ${isBday ? B.yellow + '88' : i === 0 ? inst.color + '44' : B.border}`, display: 'flex', alignItems: 'center', gap: 14, cursor: 'pointer', textAlign: 'left', position: 'relative', overflow: 'hidden', width: '100%', color: B.text }}>
@@ -63,19 +47,10 @@ function ProfilesList({ onSelect }: { onSelect: (id: string) => void }) {
                   {isGuest ? <Redacted>{inst.name}</Redacted> : inst.name}
                   {isBday ? ' 🎂' : ''}
                 </div>
-                <div style={{ display: 'flex', gap: 12, marginTop: 4, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 12, marginTop: 4 }}>
                   <span style={{ fontSize: 12, color: B.textTer }}>{stats.sqft.toFixed(1)} sqft</span>
                   <span style={{ fontSize: 12, color: B.textTer }}>{stats.panels} panels</span>
-                  {avgSqftHr && (
-                    <span style={{ fontSize: 12, color: isAbove ? B.green : isBelow ? B.red : B.textTer }}>
-                      {avgSqftHr.toFixed(1)}/hr
-                      {delta !== null && (
-                        <span style={{ fontSize: 11, marginLeft: 3, opacity: 0.85 }}>
-                          ({isAbove ? '+' : ''}{delta.toFixed(1)} vs avg)
-                        </span>
-                      )}
-                    </span>
-                  )}
+                  {avgSqftHr && <span style={{ fontSize: 12, color: B.textTer }}>{avgSqftHr.toFixed(1)}/hr</span>}
                 </div>
               </div>
               <div style={{ fontSize: 12, color: B.textTer, flexShrink: 0 }}>View →</div>
@@ -187,7 +162,6 @@ function ProfileDetail({ installerId, onBack }: { installerId: string; onBack: (
     `Projects: ${new Set(myComLogs.map(r => r.project_id).filter(Boolean)).size}`,
     ...(longestPanel ? [`Longest: ${fmtTime(longestPanel.mins)} — ${longestPanel.panel_name}${isGuest ? '' : ` (${longestPanel.project_name})`}`] : []),
     ...(fastestPanel?.sqftHr ? [`Quickest: ${fastestPanel.sqftHr.toFixed(1)} sqft/hr — ${fastestPanel.panel_name}`] : []),
-    ...(comAvg && shopAvg && comAvg > shopAvg ? [`Above shop avg (${shopAvg.toFixed(1)} sqft/hr)`] : []),
     `Total hours: ${(comMins / 60).toFixed(1)}h`,
   ]
 
@@ -216,12 +190,23 @@ function ProfileDetail({ installerId, onBack }: { installerId: string; onBack: (
 
           <div style={{ marginBottom: 8, fontSize: 11, color: B.textTer, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Commercial</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, marginBottom: 16 }}>
-            {[{ l: 'Total SQFT', v: comSqft.toFixed(1), c: installer.color }, { l: 'Panels', v: myComLogs.length, c: null }, { l: 'SQFT/HR', v: comAvg?.toFixed(1) ?? '--', c: null }].map(m => (
+            {[{ l: 'Total SQFT', v: comSqft.toFixed(1), c: installer.color }, { l: 'Panels', v: myComLogs.length, c: null }].map(m => (
               <div key={m.l} style={{ background: B.surface2, borderRadius: 10, padding: 10, textAlign: 'center' }}>
                 <div style={{ fontSize: 10, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{m.l}</div>
                 <div style={{ fontSize: 15, fontWeight: 800, color: m.c ?? B.text }}>{m.v}</div>
               </div>
             ))}
+            <div style={{ background: B.surface2, borderRadius: 10, padding: 10, textAlign: 'center' }}>
+              <div style={{ fontSize: 10, color: B.textTer, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>SQFT/HR</div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: comAvg && shopAvg ? (comAvg > shopAvg ? B.green : B.red) : B.text }}>
+                {comAvg?.toFixed(1) ?? '--'}
+              </div>
+              {comAvg && shopAvg && (
+                <div style={{ fontSize: 10, fontWeight: 700, color: comAvg > shopAvg ? B.green : B.red, marginTop: 2 }}>
+                  {comAvg > shopAvg ? '+' : ''}{(comAvg - shopAvg).toFixed(1)} vs {shopAvg.toFixed(1)} avg
+                </div>
+              )}
+            </div>
           </div>
 
           {myCCLogs.length > 0 && (
