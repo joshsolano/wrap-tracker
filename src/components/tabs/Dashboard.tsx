@@ -34,17 +34,6 @@ export default function Dashboard() {
     const lw = new Date(now); lw.setDate(lw.getDate() - 7)
     return commercial.filter(r => weekKey(r.start_ts) === weekKey(lw.toISOString()))
   }, [commercial])
-  const thisMonthLogs = useMemo(() => commercial.filter(r => {
-    if (!r.start_ts) return false
-    const d = new Date(r.start_ts)
-    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
-  }), [commercial])
-  const lastMonthLogs = useMemo(() => commercial.filter(r => {
-    if (!r.start_ts) return false
-    const d = new Date(r.start_ts)
-    const lm = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-    return d.getFullYear() === lm.getFullYear() && d.getMonth() === lm.getMonth()
-  }), [commercial])
 
   const todaySqft = todayLogs.reduce((s, r) => s + (r.sqft ?? 0), 0)
   const todayPanels = todayLogs.length
@@ -59,14 +48,6 @@ export default function Dashboard() {
   const totalMins = commercial.reduce((s, r) => s + (r.mins ?? 0), 0)
   const shopRate = totalMins > 0 ? totalSqft / (totalMins / 60) : 0
 
-  const thisMonthSqft = thisMonthLogs.reduce((s, r) => s + (r.sqft ?? 0), 0)
-  const lastMonthSqft = lastMonthLogs.reduce((s, r) => s + (r.sqft ?? 0), 0)
-  const thisMonthPanels = thisMonthLogs.length
-  const lastMonthPanels = lastMonthLogs.length
-  const thisMonthMins = thisMonthLogs.reduce((s, r) => s + (r.mins ?? 0), 0)
-  const lastMonthMins = lastMonthLogs.reduce((s, r) => s + (r.mins ?? 0), 0)
-  const thisMonthRate = thisMonthMins > 0 ? thisMonthSqft / (thisMonthMins / 60) : 0
-  const lastMonthRate = lastMonthMins > 0 ? lastMonthSqft / (lastMonthMins / 60) : 0
 
   function pct(current: number, prev: number): number | null {
     if (prev === 0) return null
@@ -314,10 +295,10 @@ export default function Dashboard() {
 
       <Label text="All time (commercial)" />
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
-        <StatCard label="Total SQFT" value={totalSqft.toFixed(1)} color={B.yellow} sub="commercial" delta={pct(thisMonthSqft, lastMonthSqft)} />
-        <StatCard label="Total Panels" value={totalPanels} sub="commercial" delta={pct(thisMonthPanels, lastMonthPanels)} />
-        <StatCard label="Hours Logged" value={(totalMins / 60).toFixed(1) + 'h'} sub="commercial" delta={pct(thisMonthMins, lastMonthMins)} />
-        <StatCard label="Shop SQFT/HR" value={shopRate > 0 ? shopRate.toFixed(1) : '--'} sub="avg" delta={pct(thisMonthRate, lastMonthRate)} />
+        <StatCard label="Total SQFT" value={totalSqft.toFixed(1)} color={B.yellow} sub="commercial" />
+        <StatCard label="Total Panels" value={totalPanels} sub="commercial" />
+        <StatCard label="Hours Logged" value={(totalMins / 60).toFixed(1) + 'h'} sub="commercial" />
+        <StatCard label="Shop SQFT/HR" value={shopRate > 0 ? shopRate.toFixed(1) : '--'} sub="avg" />
       </div>
 
       <Label text="Trends (commercial)" />
