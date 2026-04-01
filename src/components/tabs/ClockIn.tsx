@@ -11,7 +11,7 @@ import ManualEntryModal from './ManualEntryModal'
 
 export default function ClockIn() {
   const { installer: me, isGuest } = useAuth()
-  const { installers, projects, activeJobs, logs, clockIn, clockOut, discardSession, pauseJob, resumeJob } = useAppData()
+  const { installers, projects, activeJobs, logs, allLogs, clockIn, clockOut, discardSession, pauseJob, resumeJob } = useAppData()
 
   const [selectedInstallerId, setSelectedInstallerId] = useState<string | null>(me?.id ?? null)
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
@@ -425,7 +425,7 @@ export default function ClockIn() {
                   {(selectedProject.panels ?? []).map(pnl => {
                     const sel = selectedPanelId === pnl.id
                     const activeOnPanel = activeJobs.find(j => j.panel_id === pnl.id)
-                    const isDone = logs.some(r => r.panel_id === pnl.id && r.project_id === selectedProject.id && r.status === 'Complete')
+                    const isDone = allLogs.some(r => r.panel_id === pnl.id && r.project_id === selectedProject.id && r.status === 'Complete')
                     const blocked = !!activeOnPanel || isDone
                     const ipInst = activeOnPanel ? installers.find(i => i.id === activeOnPanel.installer_id) : null
                     const sqft = pnl.height_in && pnl.width_in ? calcSqft(pnl.height_in, pnl.width_in) : null
@@ -455,7 +455,7 @@ export default function ClockIn() {
                   {(selectedProject.panels ?? []).every(
                     pnl =>
                       !!activeJobs.find(j => j.panel_id === pnl.id) ||
-                      logs.some(r => r.panel_id === pnl.id && r.project_id === selectedProject.id && r.status === 'Complete')
+                      allLogs.some(r => r.panel_id === pnl.id && r.project_id === selectedProject.id && r.status === 'Complete')
                   ) && (
                     <div style={{ marginTop: 10, padding: '10px 14px', background: B.green + '0D', borderRadius: 10, border: `1px solid ${B.green}33`, fontSize: 13, color: B.green }}>
                       All panels are complete or in progress.
