@@ -1,14 +1,16 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
-import type { Installer, Manager } from '../lib/types'
+import type { Installer, Manager, ContentUser } from '../lib/types'
 
 interface AuthCtx {
   session: Session | null
   installer: Installer | null
   manager: Manager | null
+  contentUser: ContentUser | null
   isAdmin: boolean
   isGuest: boolean
+  isContent: boolean
   loading: boolean
   signIn: (email: string, password: string) => Promise<{ error: string | null }>
   signOut: () => Promise<void>
@@ -21,10 +23,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [installer, setInstaller] = useState<Installer | null>(null)
   const [manager, setManager] = useState<Manager | null>(null)
+  const [contentUser, setContentUser] = useState<ContentUser | null>(null)
   const [isGuest, setIsGuest] = useState(false)
   const [loading, setLoading] = useState(true)
 
-  async function fetchInstaller(userId: string) {
+  async function fetchUser(userId: string) {
+    // 1. Check installers
     const { data: instData } = await supabase
       .from('installers')
       .select('*')
@@ -34,17 +38,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (instData) {
       setInstaller(instData as Installer)
       setManager(null)
+      setContentUser(null)
       setLoading(false)
       return
     }
-    // Not an installer — check managers table
+    // 2. Check managers
     const { data: mgrData } = await supabase
       .from('managers')
       .select('*')
       .eq('user_id', userId)
       .single()
+    if (mgrData) {
+      setInstaller(null)
+      setManager(mgrData as Manager)
+      setContentUser(null)
+      setLoading(false)
+      return
+    }
+    // 3. Check content users
+    const { data: ctData } = await supabase
+      .from('content_users')
+      .select('*')
+      .eq('user_id', userId)
+      .single()
     setInstaller(null)
-    setManager(mgrData as Manager | null)
+    setManager(null)
+    setContentUser(ctData as ContentUser | null)
     setLoading(false)
   }
 
@@ -57,7 +76,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setInstaller(null)
           setLoading(false)
         } else {
-          fetchInstaller(s.user.id)
+          fetchUser(s.user.id)
         }
       } else {
         setLoading(false)
@@ -73,11 +92,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setLoading(false)
         } else {
           setIsGuest(false)
-          fetchInstaller(s.user.id)
+          fetchUser(s.user.id)
         }
       } else {
         setInstaller(null)
         setManager(null)
+        setContentUser(null)
         setIsGuest(false)
         setLoading(false)
       }
@@ -94,21 +114,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function signOut() {
     setIsGuest(false)
     await supabase.auth.signOut()
-    setInstaller(null); setManager(null); setSession(null)
+    setInstaller(null); setManager(null); setContentUser(null); setSession(null)
   }
 
   async function enterGuestMode() {
     setLoading(true)
     setIsGuest(true)
-    // Sign in anonymously so Supabase RLS policies allow data reads.
-    // Requires anonymous sign-in to be enabled in the Supabase dashboard
-    // (Authentication → Providers → Anonymous).
-    // onAuthStateChange will set loading=false once the session is ready.
     await supabase.auth.signInAnonymously()
   }
 
   return (
-    <AuthContext.Provider value={{ session, installer, manager, isAdmin: installer?.role === 'admin' || !!manager, isGuest, loading, signIn, signOut, enterGuestMode }}>
+    <AuthContext.Provider value={{
+      session, installer, manager, contentUser,
+      isAdmin: installer?.role === 'admin' || !!manager,
+      isGuest,
+      isContent: !!contentUser,
+      loading, signIn, signOut, enterGuestMode,
+    }}>
       {children}
     </AuthContext.Provider>
   )

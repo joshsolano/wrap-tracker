@@ -1,3 +1,21 @@
+export interface ContentUser {
+  id: string
+  user_id: string | null
+  name: string
+  email: string | null
+  created_at: string
+}
+
+export interface ProjectContentStatus {
+  id: string
+  project_id: string
+  before_status: 'pending' | 'taken' | 'skipped'
+  before_note: string | null
+  after_status: 'pending' | 'taken' | 'skipped'
+  after_note: string | null
+  updated_at: string
+}
+
 export interface ProjectPhoto {
   id: string
   project_id: string

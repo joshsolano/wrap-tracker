@@ -5,6 +5,7 @@ import { WarnModal } from '../ui/WarnModal'
 import { Toast } from '../ui/Toast'
 import { Redacted } from '../ui/Redacted'
 import { ProjectSummaryModal } from '../ui/ProjectSummaryModal'
+import { notifyContent } from '../../lib/notifyContent'
 import { B, CC, calcSqft, fmtDate, fmtDue, fmtTime, daysUntil } from '../../lib/utils'
 import type { WarnConfig, Project, Panel } from '../../lib/types'
 
@@ -303,9 +304,25 @@ export default function Projects() {
                 <div style={{ borderTop:`1px solid ${B.border}`,padding:'12px 16px 16px' }}>
                   {isComplete && (
                     <button onClick={() => setSummaryProject(p.id)}
-                      style={{ width:'100%',background:B.yellow+'18',color:B.yellow,border:`1px solid ${B.yellow}44`,borderRadius:10,padding:'10px 0',fontSize:13,fontWeight:800,cursor:'pointer',marginBottom:12,display:'flex',alignItems:'center',justifyContent:'center',gap:6 }}>
+                      style={{ width:'100%',background:B.yellow+'18',color:B.yellow,border:`1px solid ${B.yellow}44`,borderRadius:10,padding:'10px 0',fontSize:13,fontWeight:800,cursor:'pointer',marginBottom:8,display:'flex',alignItems:'center',justifyContent:'center',gap:6 }}>
                       🖨️ Project Summary
                     </button>
+                  )}
+                  {isAdmin && (
+                    <div style={{ display:'flex',gap:8,marginBottom:12 }}>
+                      {!isComplete && (
+                        <button onClick={async () => { const { error } = await notifyContent({ projectName: p.name, type: 'before' }); setToast(error ? 'Error: ' + error : '📩 Content team notified for before shots') }}
+                          style={{ flex:1,background:B.surface2,color:B.textSec,border:`1px solid ${B.border}`,borderRadius:10,padding:'8px 0',fontSize:12,fontWeight:700,cursor:'pointer' }}>
+                          📩 Notify: Before Shots
+                        </button>
+                      )}
+                      {isComplete && (
+                        <button onClick={async () => { const { error } = await notifyContent({ projectName: p.name, type: 'after' }); setToast(error ? 'Error: ' + error : '📩 Content team notified for after shots') }}
+                          style={{ flex:1,background:B.surface2,color:B.textSec,border:`1px solid ${B.border}`,borderRadius:10,padding:'8px 0',fontSize:12,fontWeight:700,cursor:'pointer' }}>
+                          📩 Notify: After Shots
+                        </button>
+                      )}
+                    </div>
                   )}
                   <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12,flexWrap:'wrap',gap:8 }}>
                     {!isGuest && editingDue === p.id ? (

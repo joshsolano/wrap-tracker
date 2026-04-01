@@ -4,6 +4,7 @@ import { useAppData, AppDataProvider } from './context/AppDataContext'
 import { ErrorBoundary } from './components/ui/ErrorBoundary'
 import { ConnectionBanner } from './components/ui/ConnectionBanner'
 import LoginScreen from './components/auth/LoginScreen'
+import ContentShell from './components/content/ContentShell'
 import ClockIn from './components/tabs/ClockIn'
 import Dashboard from './components/tabs/Dashboard'
 import LogTab from './components/tabs/Log'
@@ -250,7 +251,7 @@ function AppShell() {
 }
 
 function AppGate() {
-  const { installer, manager, isGuest, loading } = useAuth()
+  const { installer, manager, contentUser, isGuest, loading } = useAuth()
 
   if (loading) {
     return (
@@ -270,8 +271,12 @@ function AppGate() {
     )
   }
 
-  if (!installer && !manager && !isGuest) {
+  if (!installer && !manager && !contentUser && !isGuest) {
     return <LoginScreen />
+  }
+
+  if (contentUser) {
+    return <ContentShell />
   }
 
   return (
