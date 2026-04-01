@@ -57,13 +57,23 @@ export default function ClockIn() {
   const isCC = selectedProject?.project_type === 'colorchange'
   const accent = isCC ? CC : B.yellow
 
+  function isProjectDone(p: typeof projects[number]) {
+    const panels = p.panels ?? []
+    return panels.length > 0 && panels.every(pnl =>
+      !!activeJobs.find(j => j.panel_id === pnl.id) ||
+      allLogs.some(r => r.panel_id === pnl.id && r.project_id === p.id && r.status === 'Complete')
+    )
+  }
+
   const commercial = projects.filter(p =>
     !p.archived &&
+    !isProjectDone(p) &&
     p.project_type === 'commercial' &&
     (!projectSearch || p.name.toLowerCase().includes(projectSearch.toLowerCase()))
   )
   const colorchange = projects.filter(p =>
     !p.archived &&
+    !isProjectDone(p) &&
     p.project_type === 'colorchange' &&
     (!projectSearch || p.name.toLowerCase().includes(projectSearch.toLowerCase()))
   )
@@ -375,60 +385,38 @@ export default function ClockIn() {
                   {commercial.length > 0 && (
                     <>
                       <GroupHeader label="Commercial" color={B.yellow} />
-                      {commercial.map(p => {
-                        const panels = p.panels ?? []
-                        const isDoneProject = panels.length > 0 && panels.every(pnl =>
-                          !!activeJobs.find(j => j.panel_id === pnl.id) ||
-                          allLogs.some(r => r.panel_id === pnl.id && r.project_id === p.id && r.status === 'Complete')
-                        )
-                        return (
-                          <button
-                            key={p.id}
-                            onClick={() => {
-                              setSelectedProjectId(p.id)
-                              setSelectedPanelId(null)
-                              setProjectSearch('')
-                            }}
-                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderRadius: 12, border: 'none', background: B.surface2, color: isDoneProject ? B.textTer : B.text, fontSize: 14, textAlign: 'left', cursor: 'pointer', width: '100%' }}
-                          >
-                            <span>{isGuest ? <Redacted>{p.name}</Redacted> : p.name}</span>
-                            {isDoneProject && (
-                              <span style={{ fontSize: 10, fontWeight: 700, color: B.green, background: B.green + '22', padding: '2px 7px', borderRadius: 8, flexShrink: 0 }}>DONE</span>
-                            )}
-                          </button>
-                        )
-                      })}
+                      {commercial.map(p => (
+                        <button
+                          key={p.id}
+                          onClick={() => {
+                            setSelectedProjectId(p.id)
+                            setSelectedPanelId(null)
+                            setProjectSearch('')
+                          }}
+                          style={{ padding: '12px 16px', borderRadius: 12, border: 'none', background: B.surface2, color: B.text, fontSize: 14, textAlign: 'left', cursor: 'pointer', width: '100%' }}
+                        >
+                          {isGuest ? <Redacted>{p.name}</Redacted> : p.name}
+                        </button>
+                      ))}
                     </>
                   )}
                   {colorchange.length > 0 && (
                     <>
                       <GroupHeader label="Color Change" color={CC} />
-                      {colorchange.map(p => {
-                        const panels = p.panels ?? []
-                        const isDoneProject = panels.length > 0 && panels.every(pnl =>
-                          !!activeJobs.find(j => j.panel_id === pnl.id) ||
-                          allLogs.some(r => r.panel_id === pnl.id && r.project_id === p.id && r.status === 'Complete')
-                        )
-                        return (
-                          <button
-                            key={p.id}
-                            onClick={() => {
-                              setSelectedProjectId(p.id)
-                              setSelectedPanelId(null)
-                              setProjectSearch('')
-                            }}
-                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderRadius: 12, border: 'none', background: B.surface2, color: isDoneProject ? B.textTer : B.text, fontSize: 14, textAlign: 'left', cursor: 'pointer', width: '100%' }}
-                          >
-                            <span>{isGuest ? <Redacted>{p.name}</Redacted> : p.name}</span>
-                            <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
-                              {isDoneProject && (
-                                <span style={{ fontSize: 10, fontWeight: 700, color: B.green, background: B.green + '22', padding: '2px 7px', borderRadius: 8 }}>DONE</span>
-                              )}
-                              <span style={{ fontSize: 10, fontWeight: 700, color: CC, background: CC + '22', padding: '2px 7px', borderRadius: 8 }}>CC</span>
-                            </div>
-                          </button>
-                        )
-                      })}
+                      {colorchange.map(p => (
+                        <button
+                          key={p.id}
+                          onClick={() => {
+                            setSelectedProjectId(p.id)
+                            setSelectedPanelId(null)
+                            setProjectSearch('')
+                          }}
+                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderRadius: 12, border: 'none', background: B.surface2, color: B.text, fontSize: 14, textAlign: 'left', cursor: 'pointer', width: '100%' }}
+                        >
+                          <span>{isGuest ? <Redacted>{p.name}</Redacted> : p.name}</span>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: CC, background: CC + '22', padding: '2px 7px', borderRadius: 8 }}>CC</span>
+                        </button>
+                      ))}
                     </>
                   )}
                   {!commercial.length && !colorchange.length && (
