@@ -4,8 +4,10 @@ export async function notifyContent(params: {
   projectName: string
   type: 'before' | 'after'
 }) {
-  const { error } = await supabase.functions.invoke('notify-content', {
+  const { data, error } = await supabase.functions.invoke('notify-content', {
     body: { projectName: params.projectName, type: params.type },
   })
-  return { error: error?.message ?? null }
+  if (error) return { error: error.message }
+  if (data?.error) return { error: data.error }
+  return { error: null }
 }
