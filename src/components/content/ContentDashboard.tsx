@@ -97,13 +97,22 @@ export default function ContentDashboard() {
     e.target.value = ''
 
     setUploading(target)
+    let anyUploaded = false
     for (const file of files) {
       const ext = file.name.split('.').pop() ?? 'jpg'
       const path = `${target.projectId}/${target.type}/${crypto.randomUUID()}.${ext}`
       const { error: upErr } = await supabase.storage.from('project-photos').upload(path, file)
       if (upErr) { alert('Upload failed: ' + upErr.message); continue }
-      await supabase.from('project_photos').insert({ project_id: target.projectId, type: target.type, storage_path: path })
+      const { error: dbErr } = await supabase.from('project_photos').insert({ project_id: target.projectId, type: target.type, storage_path: path })
+      if (dbErr) { alert('Save failed: ' + dbErr.message); continue }
+      anyUploaded = true
     }
+
+    // Auto-mark as taken when a photo is uploaded
+    if (anyUploaded) {
+      await markStatus(target.projectId, target.type, 'taken', '')
+    }
+
     setUploading(null)
     pendingUpload.current = null
     await loadPhotos()
@@ -170,8 +179,10 @@ export default function ContentDashboard() {
           <div style={{ fontSize: 12, fontWeight: 700, color: B.textSec }}>{label}</div>
           {enabled ? (
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-              {currentStatus && currentStatus !== 'pending' && <StatusChip status={currentStatus} />}
-              {currentStatus !== 'taken' && (
+              {currentStatus === 'taken' && <StatusChip status="taken" />}
+              {currentStatus === 'skipped' && <StatusChip status="skipped" />}
+              {/* Only show Mark Taken if no photos uploaded yet */}
+              {currentStatus !== 'taken' && projectPhotos.length === 0 && (
                 <button
                   onClick={() => setNoteModal({ projectId, projectName: row?.project.name ?? '', field: type, action: 'taken', note: '' })}
                   style={{ fontSize: 11, fontWeight: 700, color: B.green, background: B.green + '15', border: `1px solid ${B.green}44`, borderRadius: 8, padding: '4px 10px', cursor: 'pointer' }}
@@ -179,7 +190,6 @@ export default function ContentDashboard() {
                   Mark Taken
                 </button>
               )}
-              {currentStatus === 'taken' && <StatusChip status="taken" />}
               {currentStatus !== 'taken' && (
                 <button
                   onClick={() => setNoteModal({ projectId, projectName: row?.project.name ?? '', field: type, action: 'skipped', note: '' })}
