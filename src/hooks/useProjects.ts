@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
+import { notifyContent } from '../lib/notifyContent'
 import type { Project, Panel, ProjectType } from '../lib/types'
 
 export function useProjects() {
@@ -30,6 +31,7 @@ export function useProjects() {
       name: params.name, project_type: params.projectType, due_date: params.dueDate ?? null,
     })
     if (err) return { error: err.message }
+    notifyContent({ projectName: params.name, type: 'before' })
     return { error: null }
   }
 
