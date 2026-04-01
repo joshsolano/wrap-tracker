@@ -152,6 +152,9 @@ function ProfileDetail({ installerId, onBack }: { installerId: string; onBack: (
   const longestPanel = myComLogs.reduce<Log | null>((mx, r) => !mx || (r.mins ?? 0) > (mx.mins ?? 0) ? r : mx, null)
   const fastestPanel = myComLogs.filter(r => r.sqftHr != null).reduce<Log | null>((mx, r) => !mx || (r.sqftHr ?? 0) > (mx.sqftHr ?? 0) ? r : mx, null)
 
+  const shopRates = completeLogs.filter(r => !r.is_color_change && r.sqftHr != null).map(r => r.sqftHr as number)
+  const shopAvg = shopRates.length ? shopRates.reduce((a, b) => a + b, 0) / shopRates.length : null
+
   const facts = [
     `Favorite type: ${favType}`,
     `Avg panel: ${myComLogs.length > 0 ? (comSqft / myComLogs.length).toFixed(1) : '--'} sqft`,
@@ -159,7 +162,7 @@ function ProfileDetail({ installerId, onBack }: { installerId: string; onBack: (
     `Projects: ${new Set(myComLogs.map(r => r.project_id).filter(Boolean)).size}`,
     ...(longestPanel ? [`Longest: ${fmtTime(longestPanel.mins)} — ${longestPanel.panel_name}${isGuest ? '' : ` (${longestPanel.project_name})`}`] : []),
     ...(fastestPanel?.sqftHr ? [`Quickest: ${fastestPanel.sqftHr.toFixed(1)} sqft/hr — ${fastestPanel.panel_name}`] : []),
-    ...(comAvg && comAvg > 20 ? [`Above 20 sqft/hr — above shop avg.`] : []),
+    ...(comAvg && shopAvg && comAvg > shopAvg ? [`Above shop avg (${shopAvg.toFixed(1)} sqft/hr)`] : []),
     `Total hours: ${(comMins / 60).toFixed(1)}h`,
   ]
 
