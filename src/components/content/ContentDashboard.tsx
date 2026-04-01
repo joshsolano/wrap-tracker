@@ -107,7 +107,7 @@ export default function ContentDashboard() {
     await load()
   }
 
-  const { needsAttention, done } = useMemo(() => {
+  const { needsAttention } = useMemo(() => {
     const needs: ProjectRow[] = []
     const finished: ProjectRow[] = []
     for (const r of rows) {
