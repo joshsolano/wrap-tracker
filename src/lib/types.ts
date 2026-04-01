@@ -118,6 +118,14 @@ export interface BountyCondition {
   created_at: string
 }
 
+export interface RewardProduct {
+  id: string
+  name: string
+  image_url: string | null
+  buy_url: string | null
+  created_at: string
+}
+
 export interface Bounty {
   id: string
   title: string
@@ -129,6 +137,8 @@ export interface Bounty {
   paid: boolean
   paid_at: string | null
   created_at: string
+  product_id: string | null
+  product?: RewardProduct | null
   conditions?: BountyCondition[]
 }
 

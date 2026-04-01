@@ -1270,6 +1270,23 @@ function FeaturedBountyCard({
             <span style={{ fontSize: 10, fontWeight: 700, color: B.yellow, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Prize</span>
             <span style={{ fontSize: 15, fontWeight: 800, color: B.yellow }}>{bounty.reward}</span>
           </div>
+          {bounty.product && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, background: B.surface3, borderRadius: 10, padding: '7px 11px', border: `1px solid ${B.border}` }}>
+              {bounty.product.image_url && (
+                <img src={bounty.product.image_url} style={{ width: 32, height: 32, borderRadius: 7, objectFit: 'cover', flexShrink: 0 }} />
+              )}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 9, color: B.textTer, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' }}>+ Wins</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: B.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{bounty.product.name}</div>
+              </div>
+              {bounty.product.buy_url && (
+                <a href={bounty.product.buy_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+                  style={{ fontSize: 11, color: B.yellow, fontWeight: 700, background: `${B.yellow}18`, border: `1px solid ${B.yellow}44`, borderRadius: 7, padding: '4px 10px', textDecoration: 'none', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                  Check it out →
+                </a>
+              )}
+            </div>
+          )}
           {!winner && (
             <div style={{ fontSize: 10, color: B.textTer, marginTop: 5 }}>Winner takes all · No splits</div>
           )}
@@ -1547,6 +1564,17 @@ function ActiveBountyCard({
           </div>
           <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 3 }}>{bounty.title}</div>
           <div style={{ fontSize: 12, fontWeight: 700, color: B.yellow }}>{bounty.reward}</div>
+          {bounty.product && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 3 }}>
+              {bounty.product.image_url && (
+                <img src={bounty.product.image_url} style={{ width: 14, height: 14, borderRadius: 3, objectFit: 'cover' }} />
+              )}
+              <span style={{ fontSize: 10, color: B.textSec, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>+ {bounty.product.name}</span>
+              {bounty.product.buy_url && (
+                <a href={bounty.product.buy_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} style={{ fontSize: 10, color: B.yellow, textDecoration: 'none', flexShrink: 0, fontWeight: 700 }}>↗</a>
+              )}
+            </div>
+          )}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5 }}>
           <div
@@ -1980,6 +2008,23 @@ function BountyDetailModal({
               </div>
               {!bounty.winner_installer_id && <span style={{ fontSize: 10, color: B.textTer }}>Winner takes all · No splits</span>}
             </div>
+            {bounty.product && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10, background: B.surface3, borderRadius: 10, padding: '9px 13px', border: `1px solid ${B.border}` }}>
+                {bounty.product.image_url && (
+                  <img src={bounty.product.image_url} style={{ width: 44, height: 44, borderRadius: 9, objectFit: 'cover', flexShrink: 0 }} />
+                )}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 9, color: B.textTer, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 2 }}>Also wins</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: B.text }}>{bounty.product.name}</div>
+                </div>
+                {bounty.product.buy_url && (
+                  <a href={bounty.product.buy_url} target="_blank" rel="noopener noreferrer"
+                    style={{ fontSize: 12, color: B.yellow, fontWeight: 700, background: `${B.yellow}18`, border: `1px solid ${B.yellow}44`, borderRadius: 8, padding: '6px 12px', textDecoration: 'none', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                    Check it out →
+                  </a>
+                )}
+              </div>
+            )}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
             <div className={isUrgent ? 'bounty-urgency' : ''} style={{ fontSize: 12, fontWeight: 700, color: tColor, background: tColor + '18', border: `1px solid ${tColor}44`, borderRadius: 8, padding: '3px 8px', whiteSpace: 'nowrap' }}>{tLeft}</div>
@@ -2269,7 +2314,7 @@ const ALL_COND_CONFIG = COND_GROUPS.flatMap(g => g.types)
 export default function Bounties() {
   const { logs, allLogs, installers, projects } = useAppData()
   const { isAdmin, installer: me, isGuest } = useAuth()
-  const { bounties, loading, createBounty, deleteBounty, toggleActive, awardWin, markPaid, markUnpaid, confirmSocialAction } = useBounties()
+  const { bounties, products, loading, createBounty, deleteBounty, toggleActive, awardWin, markPaid, markUnpaid, confirmSocialAction } = useBounties()
 
   const condIdRef = useRef(0)
   function newCondRow(type: ConditionType = 'sqft_total'): CondRow {
@@ -2286,6 +2331,7 @@ export default function Bounties() {
 
   const [fTitle,       setFTitle]       = useState('')
   const [fReward,      setFReward]      = useState('')
+  const [fProductId,   setFProductId]   = useState<string | null>(null)
   const [fStart,       setFStart]       = useState(new Date().toISOString().slice(0, 10))
   const [fEnd,         setFEnd]         = useState('')
   const [fConds,       setFConds]       = useState<CondRow[]>([newCondRow()])
@@ -2423,6 +2469,7 @@ export default function Bounties() {
       reward:    fReward.trim(),
       startDate: fStart,
       endDate:   fEnd || null,
+      productId: fProductId,
       conditions: fConds.map(c => ({
         conditionType: c.type,
         operator: c.operator,
@@ -2435,7 +2482,7 @@ export default function Bounties() {
     })
     setSaving(false)
     if (error) { setToast('Error: ' + error); return }
-    setFTitle(''); setFReward(''); setFStart(new Date().toISOString().slice(0, 10))
+    setFTitle(''); setFReward(''); setFProductId(null); setFStart(new Date().toISOString().slice(0, 10))
     setFEnd(''); setFConds([newCondRow()]); setSelectedTpl(null); setShowCreate(false)
     setToast('Bounty created!')
   }
@@ -2665,6 +2712,41 @@ export default function Bounties() {
                 style={inp}
               />
             </div>
+
+            {/* ── Reward Product ── */}
+            {products.length > 0 && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 11, color: B.textTer, fontWeight: 600, marginBottom: 7 }}>Reward Product <span style={{ fontWeight: 400, color: B.textTer }}>(optional)</span></div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                  <button
+                    onClick={() => setFProductId(null)}
+                    style={{
+                      padding: '6px 12px', borderRadius: 9, cursor: 'pointer', fontSize: 11, fontWeight: 600,
+                      background: fProductId === null ? `${B.yellow}18` : B.surface2,
+                      border: `1.5px solid ${fProductId === null ? B.yellow : B.border}`,
+                      color: fProductId === null ? B.yellow : B.textSec,
+                    }}
+                  >None</button>
+                  {products.map(p => (
+                    <button
+                      key={p.id}
+                      onClick={() => setFProductId(p.id)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 7,
+                        padding: '6px 10px', borderRadius: 9, cursor: 'pointer',
+                        background: fProductId === p.id ? `${B.yellow}18` : B.surface2,
+                        border: `1.5px solid ${fProductId === p.id ? B.yellow : B.border}`,
+                      }}
+                    >
+                      {p.image_url && (
+                        <img src={p.image_url} style={{ width: 22, height: 22, borderRadius: 5, objectFit: 'cover', flexShrink: 0 }} />
+                      )}
+                      <span style={{ fontSize: 11, fontWeight: 600, color: fProductId === p.id ? B.yellow : B.text }}>{p.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* ── Duration shortcuts ── */}
             <div style={{ marginBottom: 14 }}>

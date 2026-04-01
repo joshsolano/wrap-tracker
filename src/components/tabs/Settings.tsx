@@ -5,7 +5,7 @@ import { WarnModal } from '../ui/WarnModal'
 import { Toast } from '../ui/Toast'
 import { B, CC, SWATCH_COLORS } from '../../lib/utils'
 import { supabase } from '../../lib/supabase'
-import type { WarnConfig, Installer, Manager } from '../../lib/types'
+import type { WarnConfig, Installer, Manager, RewardProduct } from '../../lib/types'
 
 interface Props { onSignOut: () => void }
 
@@ -45,10 +45,20 @@ export default function Settings({ onSignOut }: Props) {
   const [creatingMgr, setCreatingMgr] = useState(false)
   const [mgrError, setMgrError] = useState<string | null>(null)
 
+  // Reward products
+  const [rewardProducts, setRewardProducts] = useState<RewardProduct[]>([])
+  const [newProdName, setNewProdName] = useState('')
+  const [newProdImageUrl, setNewProdImageUrl] = useState('')
+  const [newProdBuyUrl, setNewProdBuyUrl] = useState('')
+  const [creatingProd, setCreatingProd] = useState(false)
+
   useEffect(() => {
     if (!isAdmin) return
     supabase.from('managers').select('*').order('created_at').then(({ data }) => {
       if (data) setManagers(data as Manager[])
+    })
+    supabase.from('reward_products').select('*').order('created_at').then(({ data }) => {
+      if (data) setRewardProducts(data as RewardProduct[])
     })
   }, [isAdmin])
 
@@ -424,6 +434,82 @@ export default function Settings({ onSignOut }: Props) {
           </div>
 
           <button onClick={exportData} style={{ background:B.yellow,color:B.bg,border:'none',borderRadius:12,padding:'12px 20px',fontWeight:800,fontSize:14,width:'100%',cursor:'pointer' }}>Export to CSV</button>
+        </div>
+      )}
+
+      {isAdmin && (
+        <div style={{ background:B.surface,borderRadius:16,padding:16,border:`1px solid ${B.border}`,marginBottom:16 }}>
+          <div style={{ fontSize:13,fontWeight:700,marginBottom:12 }}>Reward Products</div>
+          <div style={{ fontSize:11,color:B.textSec,marginBottom:12,lineHeight:1.5 }}>
+            Link real products to bounties — installers can tap "Check it out" to see what they're competing for.
+          </div>
+
+          {rewardProducts.length > 0 && (
+            <div style={{ display:'flex',flexDirection:'column',gap:8,marginBottom:14 }}>
+              {rewardProducts.map(p => (
+                <div key={p.id} style={{ display:'flex',alignItems:'center',gap:10,background:B.surface2,borderRadius:10,padding:'10px 12px' }}>
+                  {p.image_url ? (
+                    <img src={p.image_url} style={{ width:36,height:36,borderRadius:8,objectFit:'cover',flexShrink:0 }} />
+                  ) : (
+                    <div style={{ width:36,height:36,borderRadius:8,background:B.surface3,display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0 }}>🔧</div>
+                  )}
+                  <div style={{ flex:1,minWidth:0 }}>
+                    <div style={{ fontSize:13,fontWeight:600,color:B.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{p.name}</div>
+                    {p.buy_url && (
+                      <a href={p.buy_url} target="_blank" rel="noopener noreferrer" style={{ fontSize:11,color:B.yellow,textDecoration:'none' }}>{p.buy_url.replace(/^https?:\/\//, '').split('/')[0]}</a>
+                    )}
+                  </div>
+                  <button
+                    onClick={async () => {
+                      await supabase.from('reward_products').delete().eq('id', p.id)
+                      setRewardProducts(prev => prev.filter(x => x.id !== p.id))
+                    }}
+                    style={{ fontSize:11,color:B.red,background:'none',border:`1px solid ${B.red}44`,borderRadius:7,padding:'4px 9px',cursor:'pointer',flexShrink:0 }}
+                  >Remove</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ display:'flex',flexDirection:'column',gap:7 }}>
+            <input
+              placeholder="Product name (e.g. Knifeless Tape Pro)"
+              value={newProdName}
+              onChange={e => setNewProdName(e.target.value)}
+              style={{ padding:'9px 12px',fontSize:13,borderRadius:9,background:B.surface2,color:B.text,border:'none',outline:'none' }}
+            />
+            <input
+              placeholder="Image URL (optional)"
+              value={newProdImageUrl}
+              onChange={e => setNewProdImageUrl(e.target.value)}
+              style={{ padding:'9px 12px',fontSize:13,borderRadius:9,background:B.surface2,color:B.text,border:'none',outline:'none' }}
+            />
+            <input
+              placeholder="Buy / product page URL (optional)"
+              value={newProdBuyUrl}
+              onChange={e => setNewProdBuyUrl(e.target.value)}
+              style={{ padding:'9px 12px',fontSize:13,borderRadius:9,background:B.surface2,color:B.text,border:'none',outline:'none' }}
+            />
+            <button
+              disabled={!newProdName.trim() || creatingProd}
+              onClick={async () => {
+                if (!newProdName.trim()) return
+                setCreatingProd(true)
+                const { data } = await supabase.from('reward_products')
+                  .insert({ name: newProdName.trim(), image_url: newProdImageUrl.trim() || null, buy_url: newProdBuyUrl.trim() || null })
+                  .select().single()
+                setCreatingProd(false)
+                if (data) {
+                  setRewardProducts(prev => [...prev, data as RewardProduct])
+                  setNewProdName(''); setNewProdImageUrl(''); setNewProdBuyUrl('')
+                  setToast(`${(data as RewardProduct).name} added`)
+                }
+              }}
+              style={{ background:newProdName.trim()?B.yellow:'transparent',color:newProdName.trim()?B.bg:B.textTer,border:`1px solid ${newProdName.trim()?B.yellow:B.border}`,borderRadius:9,padding:'9px 14px',fontSize:13,fontWeight:700,cursor:newProdName.trim()?'pointer':'default' }}
+            >
+              {creatingProd ? 'Adding…' : '+ Add Product'}
+            </button>
+          </div>
         </div>
       )}
 
