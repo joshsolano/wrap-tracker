@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 import { WarnModal } from '../ui/WarnModal'
 import { Toast } from '../ui/Toast'
 import { Redacted } from '../ui/Redacted'
+import { ProjectSummaryModal } from '../ui/ProjectSummaryModal'
 import { B, CC, calcSqft, fmtDate, fmtDue, fmtTime, daysUntil } from '../../lib/utils'
 import type { WarnConfig, Project, Panel } from '../../lib/types'
 
@@ -19,6 +20,7 @@ export default function Projects() {
   const [warn, setWarn] = useState<WarnConfig | null>(null)
   const [toast, setToast] = useState('')
   const [quickBusy, setQuickBusy] = useState(false)
+  const [summaryProject, setSummaryProject] = useState<string | null>(null)
 
   // "Add & Void" state for incomplete panels
   const [addVoid, setAddVoid] = useState<{ panelId: string; panelName: string; projId: string; isCC: boolean } | null>(null)
@@ -190,6 +192,23 @@ export default function Projects() {
     <div>
       <WarnModal modal={warn} onClose={() => setWarn(null)} />
       {toast && <Toast msg={toast} onDone={() => setToast('')} />}
+      {summaryProject && (() => {
+        const d = projectsData.find(x => x.p.id === summaryProject)
+        if (!d) return null
+        const projLogs = logs.filter(r => r.project_id === d.p.id && r.status === 'Complete' && !r.voided)
+        return (
+          <ProjectSummaryModal
+            project={d.p}
+            projLogs={projLogs}
+            installers={installers}
+            onTimeBadge={d.onTimeBadge}
+            completionTs={d.completionTs}
+            totalPanelSqft={d.totalPanelSqft}
+            isAdmin={isAdmin}
+            onClose={() => setSummaryProject(null)}
+          />
+        )
+      })()}
 
       {addVoid && (
         <div style={{ position:'fixed',top:0,left:0,width:'100%',height:'100%',zIndex:999,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,0.82)',padding:20 }}>
@@ -282,6 +301,12 @@ export default function Projects() {
 
               {isExp && (
                 <div style={{ borderTop:`1px solid ${B.border}`,padding:'12px 16px 16px' }}>
+                  {isComplete && (
+                    <button onClick={() => setSummaryProject(p.id)}
+                      style={{ width:'100%',background:B.yellow+'18',color:B.yellow,border:`1px solid ${B.yellow}44`,borderRadius:10,padding:'10px 0',fontSize:13,fontWeight:800,cursor:'pointer',marginBottom:12,display:'flex',alignItems:'center',justifyContent:'center',gap:6 }}>
+                      🖨️ Project Summary
+                    </button>
+                  )}
                   <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12,flexWrap:'wrap',gap:8 }}>
                     {!isGuest && editingDue === p.id ? (
                       <div style={{ display:'flex',gap:6,alignItems:'center' }}>

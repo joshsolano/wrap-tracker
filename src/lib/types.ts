@@ -1,3 +1,12 @@
+export interface ProjectPhoto {
+  id: string
+  project_id: string
+  type: 'before' | 'after'
+  storage_path: string
+  created_at: string
+  publicUrl?: string
+}
+
 export type Role = 'installer' | 'admin'
 export type ProjectType = 'commercial' | 'colorchange'
 export type JobType = 'Wrap' | 'Die-Cut' | 'Removal' | 'Other'
