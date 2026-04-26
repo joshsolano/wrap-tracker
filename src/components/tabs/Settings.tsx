@@ -7,9 +7,16 @@ import { B, CC, SWATCH_COLORS } from '../../lib/utils'
 import { supabase } from '../../lib/supabase'
 import type { WarnConfig, Installer, Manager, RewardProduct } from '../../lib/types'
 
-interface Props { onSignOut: () => void }
+type Tab = 'Clock In' | 'Dashboard' | 'Log' | 'Projects' | 'Leaderboard' | 'Bounties' | 'Profiles' | 'Panels' | 'Content' | 'Settings'
+const TOGGLEABLE_TABS: Tab[] = ['Dashboard', 'Log', 'Projects', 'Leaderboard', 'Bounties', 'Profiles', 'Panels']
 
-export default function Settings({ onSignOut }: Props) {
+interface Props {
+  onSignOut: () => void
+  hiddenTabs?: Set<Tab>
+  toggleTab?: (t: Tab) => void
+}
+
+export default function Settings({ onSignOut, hiddenTabs, toggleTab }: Props) {
   const { installers, logs, projects, activeJobs, updateInstaller, deactivateInstaller, addInstallerViaEdge, addManagerViaEdge } = useAppData()
   const { isAdmin, installer: me, isGuest } = useAuth()
 
@@ -509,6 +516,27 @@ export default function Settings({ onSignOut }: Props) {
             >
               {creatingProd ? 'Adding…' : '+ Add Product'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {!isAdmin && hiddenTabs && toggleTab && (
+        <div style={{ background:B.surface,borderRadius:16,padding:16,border:`1px solid ${B.border}`,marginBottom:16 }}>
+          <div style={{ fontSize:13,fontWeight:700,marginBottom:4 }}>Tab visibility</div>
+          <div style={{ fontSize:12,color:B.textTer,marginBottom:12 }}>Choose which tabs appear in your navigation.</div>
+          <div style={{ display:'flex',flexDirection:'column',gap:8 }}>
+            {TOGGLEABLE_TABS.map(t => {
+              const visible = !hiddenTabs.has(t)
+              return (
+                <div key={t} style={{ display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 14px',background:B.surface2,borderRadius:10 }}>
+                  <span style={{ fontSize:13,color:visible?B.text:B.textTer,fontWeight:visible?600:400 }}>{t}</span>
+                  <button onClick={() => toggleTab(t)}
+                    style={{ width:38,height:22,borderRadius:11,border:'none',background:visible?B.green:B.surface3,position:'relative',transition:'background 0.2s',flexShrink:0,cursor:'pointer' }}>
+                    <span style={{ position:'absolute',top:3,left:visible?18:3,width:16,height:16,borderRadius:'50%',background:B.text,transition:'left 0.2s',display:'block' }} />
+                  </button>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}

@@ -30,6 +30,24 @@ function AppShell() {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640)
 
+  const userId = me?.id || manager?.id || 'guest'
+  const STORAGE_KEY = `tabHidden_${userId}`
+  const [hiddenTabs, setHiddenTabs] = useState<Set<Tab>>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY)
+      return saved ? new Set(JSON.parse(saved) as Tab[]) : new Set()
+    } catch { return new Set() }
+  })
+  function toggleTab(t: Tab) {
+    setHiddenTabs(prev => {
+      const next = new Set(prev)
+      if (next.has(t)) next.delete(t); else next.add(t)
+      localStorage.setItem(STORAGE_KEY, JSON.stringify([...next]))
+      if (next.has(tab)) setTab('Clock In')
+      return next
+    })
+  }
+
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth < 640)
     window.addEventListener('resize', handler)
@@ -51,7 +69,11 @@ function AppShell() {
   const birthday = installers.find(i => isBirthday(i.birthday))
   const activeCount = activeJobs.length
 
-  const tabs: Tab[] = ALL_TABS.filter(t => t !== 'Content' || isAdmin)
+  const tabs: Tab[] = ALL_TABS.filter(t => {
+    if (t === 'Content' && !isAdmin) return false
+    if (isAdmin) return true
+    return !hiddenTabs.has(t)
+  })
 
   const tabContent: Record<Tab, React.ReactElement> = {
     'Clock In': <ClockIn />,
@@ -63,7 +85,7 @@ function AppShell() {
     Profiles: <Profiles />,
     Panels: <Panels />,
     Content: <ContentDashboard />,
-    Settings: <Settings onSignOut={signOut} />,
+    Settings: <Settings onSignOut={signOut} hiddenTabs={hiddenTabs} toggleTab={toggleTab} />,
   }
 
   return (
@@ -168,6 +190,12 @@ function AppShell() {
               })}
             </div>
           </div>
+
+          {isAdmin && (
+            <a href="/fleet" style={{ fontSize: 11, color: '#3B82F6', background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: 8, padding: '4px 10px', textDecoration: 'none', fontWeight: 700, flexShrink: 0 }}>
+              Fleet →
+            </a>
+          )}
 
           {isGuest ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>

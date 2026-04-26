@@ -1,0 +1,18 @@
+export const F = {
+  bg: '#0B1220',
+  surface: '#111C30',
+  surface2: '#172540',
+  surface3: '#1E2F50',
+  border: 'rgba(100,160,255,0.12)',
+  accent: '#2563EB',
+  accentLight: '#3B82F6',
+  text: '#F0F6FF',
+  textSec: 'rgba(240,246,255,0.55)',
+  textTer: 'rgba(240,246,255,0.3)',
+  green: '#22C55E',
+  red: '#EF4444',
+  yellow: '#F59E0B',
+  orange: '#F97316',
+  cyan: '#06B6D4',
+  purple: '#A855F7',
+}
