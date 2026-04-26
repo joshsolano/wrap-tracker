@@ -3,11 +3,11 @@ import { supabase } from '../../lib/supabase'
 import { useFleetAuth } from '../context/FleetAuthContext'
 import { useFleetNav } from '../FleetApp'
 import { F } from '../lib/fleetColors'
-import type { FleetVehicle, FleetUser } from '../lib/fleetTypes'
+import type { FleetVehicle } from '../lib/fleetTypes'
 import { STATUS_LABEL, STATUS_COLOR, REQUIRED_BEFORE, REQUIRED_AFTER } from '../lib/fleetTypes'
 import ImportVehicles from '../components/ImportVehicles'
 import DailySummary from '../components/DailySummary'
-import { exportJobCSV } from '../lib/vehiclePDF'
+import ExportPanel from '../components/ExportPanel'
 
 interface Props {
   jobId: string
@@ -94,17 +94,6 @@ export default function FleetJobPage({ jobId, jobName, customer }: Props) {
   const pct = total === 0 ? 0 : Math.round((completed / total) * 100)
   const missing = vehicles.filter(v => hasMissingPhotos(v)).length
   const flagged = vehicles.filter(v => v.flagged).length
-
-  async function exportCSV() {
-    const [{ data: logs }, { data: photos }, { data: users }] = await Promise.all([
-      supabase.from('fleet_vehicle_time_logs').select('*').in('vehicle_id', vehicles.map(v => v.id)),
-      supabase.from('fleet_vehicle_photos').select('vehicle_id,photo_type').eq('fleet_job_id', jobId),
-      supabase.from('fleet_users').select('*'),
-    ])
-    const userMap = new Map<string, FleetUser>()
-    for (const u of (users ?? []) as FleetUser[]) userMap.set(u.id, u)
-    exportJobCSV(vehicles, logs as any ?? [], photos as any ?? [], userMap, jobName)
-  }
 
   const pageTabs: { key: PageTab; label: string }[] = [
     { key: 'vehicles', label: `Vehicles (${total})` },
@@ -240,37 +229,7 @@ export default function FleetJobPage({ jobId, jobName, customer }: Props) {
 
       {/* Export tab */}
       {pageTab === 'export' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: F.text, marginBottom: 4 }}>Export</div>
-
-          <button onClick={exportCSV}
-            style={{ width: '100%', padding: 20, borderRadius: 14, background: F.surface, border: `1px solid ${F.border}`, color: F.text, fontSize: 15, fontWeight: 700, cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ fontSize: 28 }}>📊</span>
-            <div>
-              <div style={{ fontWeight: 700 }}>CSV Export — All Vehicles</div>
-              <div style={{ fontSize: 12, color: F.textSec, marginTop: 2 }}>Times, workers, photo status, notes</div>
-            </div>
-          </button>
-
-          <div style={{ padding: 16, background: F.surface2, borderRadius: 12, border: `1px solid ${F.border}` }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: F.text, marginBottom: 6 }}>Individual Vehicle PDFs</div>
-            <div style={{ fontSize: 12, color: F.textSec }}>Open any vehicle and tap "Print / PDF Report" to generate a client-ready PDF with all photos, times, and notes.</div>
-          </div>
-
-          <div style={{ padding: 16, background: F.surface2, borderRadius: 12, border: `1px solid ${F.border}` }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: F.text, marginBottom: 6 }}>Job Summary</div>
-            <div style={{ fontSize: 12, color: F.textSec, marginBottom: 10 }}>
-              {total} vehicles · {completed} completed · {flagged} flagged
-            </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {(Object.entries(statusCounts) as [FleetVehicle['status'], number][]).map(([s, count]) => (
-                <div key={s} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, background: STATUS_COLOR[s] + '22', color: STATUS_COLOR[s], fontWeight: 600 }}>
-                  {STATUS_LABEL[s]}: {count}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+        <ExportPanel jobId={jobId} jobName={jobName} customer={customer} />
       )}
 
       {showImport && (
