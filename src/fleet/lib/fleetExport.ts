@@ -44,7 +44,7 @@ const PHOTO_TYPES: PhotoType[] = [
   'vin_sticker', 'tire_size',
 ]
 
-const CSV_HEADERS = [
+export const CSV_HEADERS = [
   'vin', 'unit_number', 'year', 'make', 'model', 'status',
   'removal_time', 'install_time', 'assigned_users', 'notes', 'flagged', 'flag_reason',
   'before_front_url', 'before_driver_url', 'before_passenger_url', 'before_rear_url',
@@ -66,7 +66,7 @@ function esc(val: unknown): string {
   return s
 }
 
-function toCSV(headers: string[], rows: Record<string, unknown>[]): string {
+export function toCSV(headers: string[], rows: Record<string, unknown>[]): string {
   const lines = [headers.join(',')]
   for (const row of rows) lines.push(headers.map(h => esc(row[h])).join(','))
   return '﻿' + lines.join('\r\n')  // BOM ensures Excel opens correctly

@@ -3,6 +3,7 @@ import { F } from '../lib/fleetColors'
 import { printVehiclePDF } from '../lib/vehiclePDF'
 import type { FleetVehicle, FleetTimeLog, FleetUser, FleetVehiclePhoto, PhotoType } from '../lib/fleetTypes'
 import { PHOTO_LABEL } from '../lib/fleetTypes'
+import { CSV_HEADERS, toCSV, downloadText } from '../lib/fleetExport'
 
 type DemoTab = 'daily' | 'fleet' | 'vehicle'
 
@@ -16,24 +17,24 @@ const DAILY_ROWS = [
 ]
 
 const FLEET_ROWS = [
-  { vin:'1FTYE2CM2PKA12301', unit:'T-101', type:'Van',    status:'Complete',      removal:'1h 10m', install:'28m',  remover:'Mike R.',   installer:'Carlos V.', before:'✓', after:'✓', vin_s:'✓', tire:'✓', notes:'' },
-  { vin:'1FTYE2CM4PKA12302', unit:'T-102', type:'Van',    status:'Complete',      removal:'1h 25m', install:'26m',  remover:'Mike R.',   installer:'Carlos V.', before:'✓', after:'✓', vin_s:'✓', tire:'✓', notes:'Wrap came off clean' },
-  { vin:'1FTFW1ET3NFA12303', unit:'F-201', type:'Pickup', status:'Complete',      removal:'32m',    install:'18m',  remover:'Derek T.',  installer:'James K.',  before:'✓', after:'✓', vin_s:'✓', tire:'✓', notes:'' },
-  { vin:'1C6RR7FT4NS512304', unit:'R-301', type:'Pickup', status:'Complete',      removal:'28m',    install:'22m',  remover:'Derek T.',  installer:'James K.',  before:'✓', after:'✓', vin_s:'✓', tire:'✓', notes:'' },
-  { vin:'1FTYE2CM6PKA12305', unit:'T-103', type:'Van',    status:'Complete',      removal:'1h 45m', install:'30m',  remover:'Mike R.',   installer:'Carlos V.', before:'✓', after:'✓', vin_s:'✓', tire:'✓', notes:'Adhesive heavy on rear panel' },
-  { vin:'1FTFW1ET5NFA12306', unit:'F-202', type:'Pickup', status:'Complete',      removal:'25m',    install:'20m',  remover:'Derek T.',  installer:'James K.',  before:'✓', after:'✓', vin_s:'✓', tire:'✓', notes:'' },
-  { vin:'1C6RR6FT2NS512307', unit:'R-302', type:'Pickup', status:'Complete',      removal:'35m',    install:'22m',  remover:'Derek T.',  installer:'James K.',  before:'✓', after:'✓', vin_s:'✓', tire:'✓', notes:'' },
-  { vin:'1FMCU9GD3MUA12308', unit:'E-401', type:'SUV',    status:'Complete',      removal:'22m',    install:'17m',  remover:'Derek T.',  installer:'James K.',  before:'✓', after:'✓', vin_s:'✓', tire:'✓', notes:'' },
-  { vin:'1FTYE2CM8PKA12309', unit:'T-104', type:'Van',    status:'Install Done',  removal:'1h 05m', install:'27m',  remover:'Mike R.',   installer:'Carlos V.', before:'✓', after:'✓', vin_s:'✓', tire:'✓', notes:'' },
-  { vin:'1FTFW1ET7NFA12311', unit:'F-203', type:'Pickup', status:'Install Done',  removal:'40m',    install:'21m',  remover:'Derek T.',  installer:'James K.',  before:'✓', after:'✓', vin_s:'✓', tire:'✓', notes:'Minor paint lift on driver door' },
-  { vin:'1FTYE2CMCPKA12314', unit:'T-106', type:'Van',    status:'Installing',    removal:'1h 05m', install:'—',    remover:'Mike R.',   installer:'Carlos V.', before:'✓', after:'⚠ 2/6', vin_s:'—', tire:'—', notes:'' },
-  { vin:'1FTFW1ET9NFA12315', unit:'F-204', type:'Pickup', status:'Installing',    removal:'32m',    install:'—',    remover:'Derek T.',  installer:'James K.',  before:'✓', after:'⚠ 1/6', vin_s:'—', tire:'—', notes:'' },
-  { vin:'1FTYE2CMEPKA12318', unit:'T-107', type:'Van',    status:'Ready Install', removal:'1h 15m', install:'—',    remover:'Mike R.',   installer:'—',         before:'✓', after:'—',    vin_s:'—', tire:'—', notes:'' },
-  { vin:'1C6RR7FT0NS512320', unit:'R-305', type:'Pickup', status:'Ready Install', removal:'1h 05m', install:'—',    remover:'Derek T.',  installer:'—',         before:'✓', after:'—',    vin_s:'—', tire:'—', notes:'Toolbox section took longer' },
-  { vin:'1FTYE2CMGPKA12322', unit:'T-108', type:'Van',    status:'Removing',      removal:'—',      install:'—',    remover:'Mike R.',   installer:'—',         before:'⚠ 2/4', after:'—', vin_s:'—', tire:'—', notes:'' },
-  { vin:'1FMCU0GD9MUA12325', unit:'E-405', type:'SUV',    status:'Not Started',   removal:'—',      install:'—',    remover:'—',         installer:'—',         before:'—', after:'—',    vin_s:'—', tire:'—', notes:'' },
-  { vin:'1FTFW1ET5NFA12327', unit:'F-207', type:'Pickup', status:'⚠ Flagged',     removal:'40m',    install:'—',    remover:'Derek T.',  installer:'—',         before:'⚠ 2/4', after:'—', vin_s:'—', tire:'—', notes:'Paint damage on hood — customer sign-off required' },
-  { vin:'1FTYE2CMKPKA12328', unit:'T-110', type:'Van',    status:'⚠ Flagged',     removal:'—',      install:'—',    remover:'Mike R.',   installer:'—',         before:'✓', after:'—',    vin_s:'—', tire:'—', notes:'Adhesive not releasing on roof section' },
+  { vin:'1FTYE2CM2PKA12301', unit:'T-101', type:'Van',    make:'Ford', model:'Transit 250',  year:'2022', status:'Complete',         removal:'1h 10m', install:'28m',  users:'Mike R.; Carlos V.', before:true,  after:true,  notes:'' },
+  { vin:'1FTYE2CM4PKA12302', unit:'T-102', type:'Van',    make:'Ford', model:'Transit 250',  year:'2022', status:'Complete',         removal:'1h 25m', install:'26m',  users:'Mike R.; Carlos V.', before:true,  after:true,  notes:'Wrap came off clean' },
+  { vin:'1FTFW1ET3NFA12303', unit:'F-201', type:'Pickup', make:'Ford', model:'F-250 SD',     year:'2023', status:'Complete',         removal:'32m',    install:'18m',  users:'Derek T.; James K.', before:true,  after:true,  notes:'' },
+  { vin:'1C6RR7FT4NS512304', unit:'R-301', type:'Pickup', make:'Ram',  model:'1500 Classic', year:'2023', status:'Complete',         removal:'28m',    install:'22m',  users:'Derek T.; James K.', before:true,  after:true,  notes:'' },
+  { vin:'1FTYE2CM6PKA12305', unit:'T-103', type:'Van',    make:'Ford', model:'Transit 250',  year:'2022', status:'Complete',         removal:'1h 45m', install:'30m',  users:'Mike R.; Carlos V.', before:true,  after:true,  notes:'Adhesive heavy on rear panel' },
+  { vin:'1FTFW1ET5NFA12306', unit:'F-202', type:'Pickup', make:'Ford', model:'F-250 SD',     year:'2023', status:'Complete',         removal:'25m',    install:'20m',  users:'Derek T.; James K.', before:true,  after:true,  notes:'' },
+  { vin:'1C6RR6FT2NS512307', unit:'R-302', type:'Pickup', make:'Ram',  model:'1500 Classic', year:'2023', status:'Complete',         removal:'35m',    install:'22m',  users:'Derek T.; James K.', before:true,  after:true,  notes:'' },
+  { vin:'1FMCU9GD3MUA12308', unit:'E-401', type:'SUV',    make:'Ford', model:'Explorer',     year:'2022', status:'Complete',         removal:'22m',    install:'17m',  users:'Derek T.; James K.', before:true,  after:true,  notes:'' },
+  { vin:'1FTYE2CM8PKA12309', unit:'T-104', type:'Van',    make:'Ford', model:'Transit 250',  year:'2022', status:'Install Done',     removal:'1h 05m', install:'27m',  users:'Mike R.; Carlos V.', before:true,  after:true,  notes:'' },
+  { vin:'1FTFW1ET7NFA12311', unit:'F-203', type:'Pickup', make:'Ford', model:'F-250 SD',     year:'2023', status:'Install Done',     removal:'40m',    install:'21m',  users:'Derek T.; James K.', before:true,  after:true,  notes:'Minor paint lift on driver door' },
+  { vin:'1FTYE2CMCPKA12314', unit:'T-106', type:'Van',    make:'Ford', model:'Transit 250',  year:'2022', status:'Installing',       removal:'1h 05m', install:'',     users:'Mike R.; Carlos V.', before:true,  after:false, notes:'' },
+  { vin:'1FTFW1ET9NFA12315', unit:'F-204', type:'Pickup', make:'Ford', model:'F-250 SD',     year:'2023', status:'Installing',       removal:'32m',    install:'',     users:'Derek T.; James K.', before:true,  after:false, notes:'' },
+  { vin:'1FTYE2CMEPKA12318', unit:'T-107', type:'Van',    make:'Ford', model:'Transit 250',  year:'2022', status:'Ready to Install', removal:'1h 15m', install:'',     users:'Mike R.',             before:true,  after:false, notes:'' },
+  { vin:'1C6RR7FT0NS512320', unit:'R-305', type:'Pickup', make:'Ram',  model:'1500 Classic', year:'2023', status:'Ready to Install', removal:'1h 05m', install:'',     users:'Derek T.',            before:true,  after:false, notes:'Toolbox section took longer' },
+  { vin:'1FTYE2CMGPKA12322', unit:'T-108', type:'Van',    make:'Ford', model:'Transit 250',  year:'2022', status:'Removing',         removal:'',       install:'',     users:'Mike R.',             before:false, after:false, notes:'' },
+  { vin:'1FMCU0GD9MUA12325', unit:'E-405', type:'SUV',    make:'Ford', model:'Explorer',     year:'2022', status:'Not Started',      removal:'',       install:'',     users:'',                    before:false, after:false, notes:'' },
+  { vin:'1FTFW1ET5NFA12327', unit:'F-207', type:'Pickup', make:'Ford', model:'F-250 SD',     year:'2023', status:'Flagged',          removal:'40m',    install:'',     users:'Derek T.',            before:false, after:false, notes:'Paint damage on hood — customer sign-off required' },
+  { vin:'1FTYE2CMKPKA12328', unit:'T-110', type:'Van',    make:'Ford', model:'Transit 250',  year:'2022', status:'Flagged',          removal:'',       install:'',     users:'Mike R.',             before:true,  after:false, notes:'Adhesive not releasing on roof section' },
 ]
 
 // Per-day vehicle slices for demo
@@ -46,7 +47,7 @@ const DEMO_DAY_VEHICLES: Record<string, typeof FLEET_ROWS> = {
 
 const SAMPLE_VEHICLE = {
   vin: '1FTYE2CM2PKA12301', unit: 'T-101',
-  year: '2022', make: 'Ford', model: 'Transit',
+  year: '2022', make: 'Ford', model: 'Transit 250',
   type: 'Van', department: 'Field Ops', status: 'Complete',
   removal: { worker: 'Mike Rodriguez', start: 'Apr 14  8:00 AM', end: 'Apr 14  9:10 AM', duration: '1h 10m', notes: '' },
   install:  { worker: 'Carlos Vega',    start: 'Apr 14 11:00 AM', end: 'Apr 14 11:28 AM', duration: '28m',    notes: '' },
@@ -57,17 +58,59 @@ const SAMPLE_VEHICLE = {
   qc: 'Approved',
 }
 
-// ── Download helpers ──────────────────────────────────────────────
+// Photo types that appear in ZIP exports (matches fleetExport.ts PHOTO_TYPES)
+const ZIP_PHOTO_TYPES: PhotoType[] = [
+  'before_front', 'before_driver', 'before_passenger', 'before_rear',
+  'after_front', 'after_driver', 'after_passenger', 'after_rear',
+  'vin_sticker', 'tire_size',
+]
 
-function downloadCSV(filename: string, rows: string[][]) {
-  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
-  const blob = new Blob([csv], { type: 'text/csv' })
-  const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(a.href)
+// ── CSV row builder (matches production format exactly) ───────────
+
+const DEMO_STORAGE_BASE = 'https://xxxxxxxxxxxx.supabase.co/storage/v1/object/public/fleet-photos/demo-job'
+
+const MANIFEST_HEADERS = [
+  'vin', 'unit_number', 'year', 'make', 'model', 'status',
+  'photo_type', 'file_name', 'included_in_zip', 'storage_path', 'uploaded_at',
+]
+
+function demoPhotoUrl(unit: string, photoType: string): string {
+  return `${DEMO_STORAGE_BASE}/${unit.replace('-', '').toLowerCase()}/${photoType}.jpg`
 }
+
+function buildDemoCSVRow(r: typeof FLEET_ROWS[0], now: string): Record<string, unknown> {
+  const isFlagged = r.status === 'Flagged'
+  return {
+    vin:                  r.vin,
+    unit_number:          r.unit,
+    year:                 r.year,
+    make:                 r.make,
+    model:                r.model,
+    status:               r.status,
+    removal_time:         r.removal,
+    install_time:         r.install,
+    assigned_users:       r.users,
+    notes:                r.notes,
+    flagged:              isFlagged ? 'Yes' : 'No',
+    flag_reason:          isFlagged ? r.notes : '',
+    before_front_url:     r.before ? demoPhotoUrl(r.unit, 'before_front')     : '',
+    before_driver_url:    r.before ? demoPhotoUrl(r.unit, 'before_driver')    : '',
+    before_passenger_url: r.before ? demoPhotoUrl(r.unit, 'before_passenger') : '',
+    before_rear_url:      r.before ? demoPhotoUrl(r.unit, 'before_rear')      : '',
+    after_front_url:      r.after  ? demoPhotoUrl(r.unit, 'after_front')      : '',
+    after_driver_url:     r.after  ? demoPhotoUrl(r.unit, 'after_driver')     : '',
+    after_passenger_url:  r.after  ? demoPhotoUrl(r.unit, 'after_passenger')  : '',
+    after_rear_url:       r.after  ? demoPhotoUrl(r.unit, 'after_rear')       : '',
+    vin_sticker_url:      r.after  ? demoPhotoUrl(r.unit, 'vin_sticker')      : '',
+    tire_size_url:        r.after  ? demoPhotoUrl(r.unit, 'tire_size')        : '',
+    export_generated_at:  now,
+    export_generated_by:  'Demo Export',
+    photo_bucket_type:    'public',
+    signed_url_expires_at: '',
+  }
+}
+
+// ── Demo photo generation (canvas) ───────────────────────────────
 
 function makeDemoPhoto(label: string, phase: 'before' | 'after' | 'doc'): string {
   const canvas = document.createElement('canvas')
@@ -78,54 +121,44 @@ function makeDemoPhoto(label: string, phase: 'before' | 'after' | 'doc'): string
   const accent = { before: '#3b82f6', after: '#22c55e', doc: '#f59e0b' }[phase]
   const dim   = { before: '#1e3a6e', after: '#14432a', doc: '#3b2608' }[phase]
 
-  // Background
   ctx.fillStyle = bg
   ctx.fillRect(0, 0, 800, 600)
 
-  // Subtle diagonal lines
   ctx.strokeStyle = dim
   ctx.lineWidth = 1.5
   for (let i = -600; i < 1400; i += 50) {
     ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i + 600, 600); ctx.stroke()
   }
 
-  // Radial glow
   const grd = ctx.createRadialGradient(400, 280, 40, 400, 280, 320)
   grd.addColorStop(0, accent + '28'); grd.addColorStop(1, accent + '00')
   ctx.fillStyle = grd; ctx.fillRect(0, 0, 800, 600)
 
-  // Rounded card
   ctx.fillStyle = 'rgba(255,255,255,0.05)'
   ctx.beginPath(); ctx.roundRect(260, 160, 280, 210, 14); ctx.fill()
   ctx.strokeStyle = accent + '50'; ctx.lineWidth = 1.5; ctx.stroke()
 
-  // Camera body
   ctx.fillStyle = accent + 'bb'
   ctx.beginPath(); ctx.roundRect(310, 195, 180, 110, 10); ctx.fill()
-  // Lens ring
   ctx.fillStyle = bg
   ctx.beginPath(); ctx.arc(400, 250, 36, 0, Math.PI * 2); ctx.fill()
   ctx.fillStyle = accent + 'dd'
   ctx.beginPath(); ctx.arc(400, 250, 26, 0, Math.PI * 2); ctx.fill()
   ctx.fillStyle = 'rgba(255,255,255,0.25)'
   ctx.beginPath(); ctx.arc(392, 242, 9, 0, Math.PI * 2); ctx.fill()
-  // Viewfinder bump
   ctx.fillStyle = accent + 'bb'
   ctx.beginPath(); ctx.roundRect(348, 183, 44, 18, 5); ctx.fill()
 
-  // Checkmark badge
   ctx.fillStyle = accent
   ctx.beginPath(); ctx.roundRect(344, 394, 112, 32, 8); ctx.fill()
   ctx.fillStyle = '#fff'
   ctx.font = 'bold 15px sans-serif'; ctx.textAlign = 'center'
   ctx.fillText('✓  UPLOADED', 400, 415)
 
-  // Label
   ctx.fillStyle = '#ffffff'
   ctx.font = 'bold 24px -apple-system, Helvetica, sans-serif'
   ctx.fillText(label.toUpperCase(), 400, 464)
 
-  // Caption
   ctx.fillStyle = 'rgba(255,255,255,0.28)'
   ctx.font = '13px sans-serif'
   ctx.fillText('SPIRE FLEET DEMO  •  SAMPLE PHOTO', 400, 492)
@@ -155,6 +188,28 @@ function makeDemoPhotos(): FleetVehiclePhoto[] {
   }))
 }
 
+// ── Export handlers ───────────────────────────────────────────────
+
+function handleFleetCSV() {
+  const now = new Date().toISOString()
+  const rows = FLEET_ROWS.map(r => buildDemoCSVRow(r, now))
+  downloadText(toCSV(CSV_HEADERS, rows), 'spire-fleet-full-export.csv')
+}
+
+function handleDailyCSV(dayKey: string) {
+  const now = new Date().toISOString()
+  const vehicles = DEMO_DAY_VEHICLES[dayKey] ?? []
+  const rows = vehicles.map(r => buildDemoCSVRow(r, now))
+  downloadText(toCSV(CSV_HEADERS, rows), `spire-fleet-daily-${dayKey}.csv`)
+}
+
+function handleVehicleCSV() {
+  const now = new Date().toISOString()
+  const r = FLEET_ROWS[0]  // T-101
+  const row = buildDemoCSVRow(r, now)
+  downloadText(toCSV(CSV_HEADERS, [row]), `vehicle_${SAMPLE_VEHICLE.unit}.csv`)
+}
+
 async function printDemoVehiclePDF() {
   const vehicle: FleetVehicle = {
     id: 'demo-T101', fleet_job_id: 'demo-job',
@@ -177,31 +232,73 @@ async function printDemoVehiclePDF() {
   })
 }
 
-function downloadJSON(filename: string, data: object) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-  const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(a.href)
-}
+async function handleDemoZip(setLoading: (v: boolean) => void) {
+  setLoading(true)
+  try {
+    const { default: JSZip } = await import('jszip')
+    const zip = new JSZip()
+    const photosRoot = zip.folder('Fleet-Photos')!
+    const vehicleFolder = 'T-101 - 1FTYE2CM2PKA12301'
+    const vFolder = photosRoot.folder(vehicleFolder)!
 
-function handleFleetCSV() {
-  downloadCSV('spire-fleet-full-export.csv', [
-    ['VIN', 'Unit #', 'Type', 'Status', 'Removal Time', 'Install Time', 'Remover', 'Installer', 'Before Photos', 'After Photos', 'VIN Sticker', 'Tire Photo', 'Notes'],
-    ...FLEET_ROWS.map(r => [r.vin, r.unit, r.type, r.status, r.removal, r.install, r.remover, r.installer, r.before, r.after, r.vin_s, r.tire, r.notes]),
-  ])
-}
+    // Generate canvas photos and add to ZIP (T-101 only)
+    const demoPhotos = makeDemoPhotos().filter(p => ZIP_PHOTO_TYPES.includes(p.photo_type))
+    for (const photo of demoPhotos) {
+      if (!photo.publicUrl) continue
+      const res = await fetch(photo.publicUrl)
+      const buf = await res.arrayBuffer()
+      vFolder.file(`${photo.photo_type}.jpg`, buf)
+    }
 
-function handleVehicleJSON() {
-  downloadJSON('spire-fleet-T101-vehicle-report.json', {
-    meta: { exported: new Date().toISOString(), system: 'Wrap GFX Fleet Operations', job: 'Spire Fleet Demo', customer: 'Spire Energy' },
-    vehicle: { vin: SAMPLE_VEHICLE.vin, unit_number: SAMPLE_VEHICLE.unit, year: SAMPLE_VEHICLE.year, make: SAMPLE_VEHICLE.make, model: SAMPLE_VEHICLE.model, vehicle_type: SAMPLE_VEHICLE.type, department: SAMPLE_VEHICLE.department, status: SAMPLE_VEHICLE.status },
-    removal: SAMPLE_VEHICLE.removal,
-    install: SAMPLE_VEHICLE.install,
-    photos: SAMPLE_VEHICLE.photos,
-    qc: { result: SAMPLE_VEHICLE.qc, checklist: { before_photos: true, removal_done: true, after_photos: true, vin_sticker: true, tire_photo: true, branding_correct: true, no_adhesive: true } },
-  })
+    // manifest.csv — all 18 vehicles, only T-101 included in zip
+    const manifestRows: Record<string, unknown>[] = []
+    for (const r of FLEET_ROWS) {
+      for (const pt of ZIP_PHOTO_TYPES) {
+        const isBefore = pt.startsWith('before_')
+        const hasPhoto = isBefore ? r.before : r.after
+        const inZip = r.unit === 'T-101' && hasPhoto
+        manifestRows.push({
+          vin:             r.vin,
+          unit_number:     r.unit,
+          year:            r.year,
+          make:            r.make,
+          model:           r.model,
+          status:          r.status,
+          photo_type:      pt,
+          file_name:       hasPhoto ? `${pt}.jpg` : '',
+          included_in_zip: inZip ? 'true' : 'false',
+          storage_path:    hasPhoto ? `demo-job/${r.unit.toLowerCase().replace('-', '')}/${pt}.jpg` : '',
+          uploaded_at:     hasPhoto ? '2025-04-14T10:00:00.000Z' : '',
+        })
+      }
+    }
+    zip.file('manifest.csv', toCSV(MANIFEST_HEADERS, manifestRows))
+
+    // missing_photos.csv — vehicles with incomplete required photos
+    const missingRows: Record<string, unknown>[] = []
+    for (const r of FLEET_ROWS) {
+      const missing: string[] = []
+      if (!r.before) missing.push('before_front', 'before_driver', 'before_passenger', 'before_rear')
+      if (!r.after)  missing.push('after_front', 'after_driver', 'after_passenger', 'after_rear', 'vin_sticker', 'tire_size')
+      if (missing.length > 0) {
+        missingRows.push({ vin: r.vin, unit_number: r.unit, status: r.status, missing_required_photos: missing.join('; ') })
+      }
+    }
+    if (missingRows.length > 0) {
+      zip.file('missing_photos.csv', toCSV(['vin', 'unit_number', 'status', 'missing_required_photos'], missingRows))
+    }
+
+    const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = 'spire-fleet-demo_photos.zip'; a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 15000)
+
+    // Also auto-download the fleet CSV (matches production behavior)
+    handleFleetCSV()
+  } finally {
+    setLoading(false)
+  }
 }
 
 function esc(s: string | number): string {
@@ -216,15 +313,16 @@ function printDailyPDF(dayKey: string) {
   const now = new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
 
   const tableRows = vehicles.map(v => {
-    const photosOk = v.before === '✓' && v.after === '✓' && v.vin_s === '✓' && v.tire === '✓'
-    const statusColor = v.status === 'Complete' ? '#16a34a' : v.status.includes('Flagged') ? '#dc2626' : '#374151'
+    const photosOk = v.before && v.after
+    const isFlagged = v.status === 'Flagged'
+    const statusColor = v.status === 'Complete' ? '#16a34a' : isFlagged ? '#dc2626' : '#374151'
     return `
       <tr>
         <td><strong>${esc(v.unit)}</strong><br/><span style="font-size:10px;color:#6b7280;font-family:monospace">${esc(v.vin.slice(-10))}</span></td>
         <td>${esc(v.type)}</td>
         <td style="color:${statusColor};font-weight:600">${esc(v.status)}</td>
-        <td>${esc(v.removal)}${v.remover !== '—' ? `<br/><span style="font-size:10px;color:#6b7280">${esc(v.remover)}</span>` : ''}</td>
-        <td>${esc(v.install)}${v.installer !== '—' ? `<br/><span style="font-size:10px;color:#6b7280">${esc(v.installer)}</span>` : ''}</td>
+        <td>${esc(v.removal || '—')}${v.users ? `<br/><span style="font-size:10px;color:#6b7280">${esc(v.users.split(';')[0].trim())}</span>` : ''}</td>
+        <td>${esc(v.install || '—')}${v.users && v.users.includes(';') ? `<br/><span style="font-size:10px;color:#6b7280">${esc(v.users.split(';')[1]?.trim() ?? '')}</span>` : ''}</td>
         <td>${photosOk ? '<span style="color:#16a34a;font-weight:700">✓ All</span>' : `<span style="color:#b45309">Incomplete</span>`}</td>
         <td style="color:#6b7280;font-size:11px">${esc(v.notes || '—')}</td>
       </tr>`
@@ -269,30 +367,24 @@ function printDailyPDF(dayKey: string) {
     </div>
     <div class="gen">DAILY OPERATIONS REPORT<br/>Generated ${esc(now)}</div>
   </div>
-
   <div class="stats">
     <div class="stat"><div class="stat-val" style="color:${day.completed > 0 ? '#16a34a' : '#111827'}">${day.completed}</div><div class="stat-label">Completed</div></div>
     <div class="stat"><div class="stat-val" style="color:${day.removed > 0 ? '#2563eb' : '#111827'}">${day.removed}</div><div class="stat-label">Removals</div></div>
     <div class="stat"><div class="stat-val" style="color:${day.installed > 0 ? '#0891b2' : '#111827'}">${day.installed}</div><div class="stat-label">Installs</div></div>
     <div class="stat"><div class="stat-val" style="color:${day.flagged > 0 ? '#dc2626' : '#111827'}">${day.flagged}</div><div class="stat-label">Flagged</div></div>
   </div>
-
   <div class="avg-row">
     <div class="avg-card"><div class="avg-val" style="color:#ea580c">${esc(day.avgRemoval)}</div><div class="avg-label">Avg Removal Time</div></div>
     <div class="avg-card"><div class="avg-val" style="color:#7c3aed">${esc(day.avgInstall)}</div><div class="avg-label">Avg Install Time</div></div>
     <div class="avg-card"><div class="avg-val" style="color:#374151">${day.inProgress}</div><div class="avg-label">In Progress</div></div>
   </div>
-
   <div class="section-title">Vehicle Activity — ${vehicles.length} vehicle${vehicles.length !== 1 ? 's' : ''}</div>
   <table>
     <thead>
-      <tr>
-        <th>Unit / VIN</th><th>Type</th><th>Status</th><th>Removal</th><th>Install</th><th>Photos</th><th>Notes</th>
-      </tr>
+      <tr><th>Unit / VIN</th><th>Type</th><th>Status</th><th>Removal</th><th>Install</th><th>Photos</th><th>Notes</th></tr>
     </thead>
     <tbody>${tableRows}</tbody>
   </table>
-
   <div class="footer">
     <span>Wrap GFX Fleet Operations System &bull; Confidential</span>
     <span>Spire Fleet Demo &bull; Apr 14–25, 2025</span>
@@ -313,16 +405,10 @@ export default function FleetDemoPage() {
   const [tab, setTab] = useState<DemoTab>('daily')
   const [selectedDayKey, setSelectedDayKey] = useState('apr17')
   const [pdfLoading, setPdfLoading] = useState(false)
+  const [zipLoading, setZipLoading] = useState(false)
 
   const selectedDay = DAILY_ROWS.find(r => r.dateKey === selectedDayKey) ?? DAILY_ROWS[3]
   const dayVehicles = DEMO_DAY_VEHICLES[selectedDayKey] ?? []
-
-  const dlBtn = (label: string, onClick: () => void) => (
-    <button onClick={onClick}
-      style={{ background: F.accent, color: '#fff', border: 'none', borderRadius: 12, padding: '13px 20px', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
-      ⬇ {label}
-    </button>
-  )
 
   return (
     <div>
@@ -404,26 +490,24 @@ export default function FleetDemoPage() {
               <div style={{ fontSize: 13, fontWeight: 700, color: F.text }}>Vehicle Activity</div>
               <div style={{ fontSize: 11, color: F.textTer }}>{dayVehicles.length} vehicles</div>
             </div>
-            {dayVehicles.map((v, i) => {
-              const photosOk = v.before === '✓' && v.after === '✓'
-              return (
-                <div key={i} style={{ padding: '12px 16px', borderBottom: `1px solid ${F.border}22`, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                  <div>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', marginBottom: 3 }}>
-                      <span style={{ fontSize: 14, fontWeight: 700, color: F.text }}>{v.unit}</span>
-                      <span style={{ fontSize: 11, color: v.status === 'Complete' ? F.green : v.status.includes('Flagged') ? F.red : F.textSec, fontWeight: 600 }}>{v.status}</span>
-                    </div>
-                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                      {v.removal !== '—' && <span style={{ fontSize: 12, color: F.textSec }}><span style={{ color: F.orange, fontWeight: 700 }}>R</span> {v.removal} · {v.remover}</span>}
-                      {v.install !== '—' && <span style={{ fontSize: 12, color: F.textSec }}><span style={{ color: F.purple, fontWeight: 700 }}>I</span> {v.install} · {v.installer}</span>}
-                    </div>
+            {dayVehicles.map((v, i) => (
+              <div key={i} style={{ padding: '12px 16px', borderBottom: `1px solid ${F.border}22`, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                <div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', marginBottom: 3 }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: F.text }}>{v.unit}</span>
+                    <span style={{ fontSize: 11, color: v.status === 'Complete' ? F.green : v.status === 'Flagged' ? F.red : F.textSec, fontWeight: 600 }}>{v.status}</span>
                   </div>
-                  <span style={{ fontSize: 11, color: photosOk ? F.green : F.yellow, fontWeight: 600, flexShrink: 0 }}>
-                    {photosOk ? '✓' : '⚠'} Photos
-                  </span>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    {v.removal && <span style={{ fontSize: 12, color: F.textSec }}><span style={{ color: F.orange, fontWeight: 700 }}>R</span> {v.removal}</span>}
+                    {v.install && <span style={{ fontSize: 12, color: F.textSec }}><span style={{ color: F.purple, fontWeight: 700 }}>I</span> {v.install}</span>}
+                    {v.users && <span style={{ fontSize: 12, color: F.textSec }}>{v.users}</span>}
+                  </div>
                 </div>
-              )
-            })}
+                <span style={{ fontSize: 11, color: v.before && v.after ? F.green : F.yellow, fontWeight: 600, flexShrink: 0 }}>
+                  {v.before && v.after ? '✓' : '⚠'} Photos
+                </span>
+              </div>
+            ))}
           </div>
 
           {/* Export buttons */}
@@ -432,17 +516,7 @@ export default function FleetDemoPage() {
               style={{ flex: 1, padding: '14px 16px', borderRadius: 12, background: F.accent, color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
               📄 Print Daily PDF
             </button>
-            <button onClick={() => {
-              const day = DAILY_ROWS.find(r => r.dateKey === selectedDayKey)!
-              const vehicles = DEMO_DAY_VEHICLES[selectedDayKey] ?? []
-              downloadCSV(`spire-fleet-daily-${selectedDayKey}.csv`, [
-                ['Date', 'Completed', 'Removed', 'Installed', 'In Progress', 'Flagged', 'Avg Removal', 'Avg Install'],
-                [day.date, day.completed, day.removed, day.installed, day.inProgress, day.flagged, day.avgRemoval, day.avgInstall].map(String),
-                [],
-                ['Unit', 'Type', 'Status', 'Removal', 'Install', 'Remover', 'Installer', 'Notes'],
-                ...vehicles.map(v => [v.unit, v.type, v.status, v.removal, v.install, v.remover, v.installer, v.notes]),
-              ])
-            }}
+            <button onClick={() => handleDailyCSV(selectedDayKey)}
               style={{ padding: '14px 16px', borderRadius: 12, background: F.surface2, color: F.accentLight, border: `1px solid ${F.border}`, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
               ⬇ CSV
             </button>
@@ -468,10 +542,12 @@ export default function FleetDemoPage() {
                       <td style={{ ...td, fontFamily: 'monospace', fontSize: 11 }}>{r.vin.slice(-8)}</td>
                       <td style={{ ...td, fontWeight: 600 }}>{r.unit}</td>
                       <td style={{ ...td, color: F.textSec }}>{r.type}</td>
-                      <td style={{ ...td, fontSize: 11, color: r.status.includes('Flagged') ? F.red : r.status === 'Complete' ? F.green : F.text, fontWeight: 600 }}>{r.status}</td>
-                      <td style={{ ...td, color: F.textSec }}>{r.removal}</td>
-                      <td style={{ ...td, color: F.textSec }}>{r.install}</td>
-                      <td style={{ ...td, color: r.before === '✓' && r.after === '✓' ? F.green : F.yellow, fontSize: 11 }}>B:{r.before} A:{r.after}</td>
+                      <td style={{ ...td, fontSize: 11, color: r.status === 'Flagged' ? F.red : r.status === 'Complete' ? F.green : F.text, fontWeight: 600 }}>{r.status}</td>
+                      <td style={{ ...td, color: F.textSec }}>{r.removal || '—'}</td>
+                      <td style={{ ...td, color: F.textSec }}>{r.install || '—'}</td>
+                      <td style={{ ...td, color: r.before && r.after ? F.green : F.yellow, fontSize: 11 }}>
+                        {r.before && r.after ? '✓ All' : r.before ? 'Before only' : '—'}
+                      </td>
                       <td style={{ ...td, color: F.textSec, maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.notes || '—'}</td>
                     </tr>
                   ))}
@@ -480,11 +556,27 @@ export default function FleetDemoPage() {
             </div>
             <div style={{ fontSize: 11, color: F.textTer, marginTop: 10 }}>Showing {FLEET_ROWS.length} of 28 vehicles</div>
           </div>
+
+          {/* Fleet CSV download */}
           <div style={{ ...sec, background: F.surface2 }}>
-            <div style={{ fontSize: 12, color: F.textSec, marginBottom: 14, lineHeight: 1.5 }}>
-              <strong style={{ color: F.text }}>Full export includes:</strong> Every vehicle with VIN, unit #, type, department, status, removal/install times + workers, photo completeness, and notes. One row per vehicle.
+            <div style={{ fontSize: 12, color: F.textSec, marginBottom: 8, lineHeight: 1.5 }}>
+              <strong style={{ color: F.text }}>Full Fleet CSV</strong> — {CSV_HEADERS.length} columns including VIN, unit #, year/make/model, removal + install times, assigned workers, notes, flagged status, and direct photo URLs (10 columns).
             </div>
-            {dlBtn('Download Full Fleet CSV (28 vehicles)', handleFleetCSV)}
+            <button onClick={handleFleetCSV}
+              style={{ width: '100%', background: F.accent, color: '#fff', border: 'none', borderRadius: 12, padding: '13px 20px', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+              ⬇ Download Fleet CSV ({FLEET_ROWS.length} vehicles)
+            </button>
+          </div>
+
+          {/* Photos ZIP download */}
+          <div style={{ ...sec, background: F.surface2 }}>
+            <div style={{ fontSize: 12, color: F.textSec, marginBottom: 8, lineHeight: 1.5 }}>
+              <strong style={{ color: F.text }}>Photos ZIP</strong> — Photos organized per vehicle folder. Includes <code style={{ fontSize: 11, background: F.surface3, padding: '1px 4px', borderRadius: 4 }}>manifest.csv</code>, <code style={{ fontSize: 11, background: F.surface3, padding: '1px 4px', borderRadius: 4 }}>missing_photos.csv</code>, and fleet CSV. Demo downloads T-101 photos (canvas-generated) + full manifest for all {FLEET_ROWS.length} vehicles.
+            </div>
+            <button onClick={() => handleDemoZip(setZipLoading)} disabled={zipLoading}
+              style={{ width: '100%', background: zipLoading ? F.surface3 : F.cyan, color: zipLoading ? F.textTer : '#fff', border: 'none', borderRadius: 12, padding: '13px 20px', fontSize: 14, fontWeight: 700, cursor: zipLoading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+              {zipLoading ? '⏳ Building ZIP…' : '🗂 Download Demo Photos ZIP'}
+            </button>
           </div>
         </div>
       )}
@@ -580,7 +672,7 @@ export default function FleetDemoPage() {
 
           <div style={{ ...sec, background: F.surface2 }}>
             <div style={{ fontSize: 12, color: F.textSec, marginBottom: 14, lineHeight: 1.5 }}>
-              <strong style={{ color: F.text }}>Individual vehicle report:</strong> Each vehicle gets a print-ready PDF with full timestamps, worker names, photos embedded, notes, and QC result. Generated from the vehicle page.
+              <strong style={{ color: F.text }}>Individual vehicle report:</strong> Each vehicle gets a print-ready PDF with full timestamps, worker names, photos embedded, notes, and QC result. The CSV export is a single row in the same {CSV_HEADERS.length}-column format as the fleet CSV.
             </div>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               <button
@@ -589,7 +681,10 @@ export default function FleetDemoPage() {
                 style={{ flex: 1, background: F.accent, color: '#fff', border: 'none', borderRadius: 12, padding: '13px 16px', fontSize: 14, fontWeight: 700, cursor: pdfLoading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                 {pdfLoading ? '⏳ Preparing…' : '📄 Print Vehicle PDF'}
               </button>
-              {dlBtn('Download Sample JSON', handleVehicleJSON)}
+              <button onClick={handleVehicleCSV}
+                style={{ background: F.surface, color: F.accentLight, border: `1px solid ${F.border}`, borderRadius: 12, padding: '13px 16px', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
+                ⬇ Vehicle CSV
+              </button>
             </div>
           </div>
         </div>
