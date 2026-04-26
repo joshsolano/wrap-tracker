@@ -63,6 +63,7 @@ export interface FleetVehicle {
   flagged: boolean
   flag_reason: string | null
   created_at: string
+  version?: number  // optimistic locking (fleet_schema_v2)
 }
 
 export interface FleetVehiclePhoto {
@@ -72,6 +73,7 @@ export interface FleetVehiclePhoto {
   photo_type: PhotoType
   storage_path: string
   uploaded_by: string | null
+  upload_state?: 'pending' | 'complete' | 'failed'  // fleet_schema_v2
   created_at: string
   publicUrl?: string
 }
@@ -84,8 +86,20 @@ export interface FleetTimeLog {
   start_ts: string | null
   end_ts: string | null
   notes: string | null
+  operation_id?: string | null  // idempotency key (fleet_schema_v2)
   created_at: string
   fleet_user?: FleetUser
+}
+
+export interface FleetVehicleAuditLog {
+  id: string
+  vehicle_id: string
+  fleet_user_id: string | null
+  action_type: string
+  previous_state: Record<string, unknown> | null
+  new_state: Record<string, unknown> | null
+  metadata: Record<string, unknown> | null
+  created_at: string
 }
 
 export const STATUS_LABEL: Record<VehicleStatus, string> = {

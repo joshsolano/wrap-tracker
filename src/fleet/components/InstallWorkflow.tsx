@@ -7,6 +7,10 @@ import { PHOTO_LABEL, REQUIRED_AFTER } from '../lib/fleetTypes'
 
 const AFTER_PHOTOS: PhotoType[] = ['after_front', 'after_driver', 'after_passenger', 'after_rear', 'vin_sticker', 'tire_size']
 
+const UNIQUE_VIOLATION = '23505'
+
+function pendingOpKey(vehicleId: string) { return `fleet-install-op-${vehicleId}` }
+
 function fmtSecs(s: number) {
   const h = Math.floor(s / 3600)
   const m = Math.floor((s % 3600) / 60)
@@ -29,6 +33,7 @@ export default function InstallWorkflow({ vehicle, jobId, onStatusChange }: Prop
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState<PhotoType | null>(null)
+  const [versionConflict, setVersionConflict] = useState(false)
   const [, setTick] = useState(0)
   const fileRef = useRef<HTMLInputElement>(null)
   const pendingType = useRef<PhotoType | null>(null)
@@ -69,14 +74,25 @@ export default function InstallWorkflow({ vehicle, jobId, onStatusChange }: Prop
     const type = pendingType.current
     if (!file || !type) return
     setUploading(type)
+
     const path = `${jobId}/${vehicle.id}/${type}-${Date.now()}.jpg`
-    const { error: upErr } = await supabase.storage.from('fleet-photos').upload(path, file)
-    if (upErr) { alert('Upload failed: ' + upErr.message); setUploading(null); e.target.value = ''; return }
-    const { error: dbErr } = await supabase.from('fleet_vehicle_photos').insert({
+
+    // Insert DB record as 'pending' before uploading to storage
+    const { data: photoRow, error: dbErr1 } = await supabase.from('fleet_vehicle_photos').insert({
       vehicle_id: vehicle.id, fleet_job_id: jobId, photo_type: type,
       storage_path: path, uploaded_by: fleetUser?.id ?? null,
-    })
-    if (dbErr) { alert('Save failed: ' + dbErr.message); setUploading(null); e.target.value = ''; return }
+      upload_state: 'pending',
+    }).select('id').single()
+
+    if (dbErr1) { alert('Save failed: ' + dbErr1.message); setUploading(null); e.target.value = ''; return }
+
+    const { error: upErr } = await supabase.storage.from('fleet-photos').upload(path, file)
+    if (upErr) {
+      await supabase.from('fleet_vehicle_photos').update({ upload_state: 'failed' }).eq('id', photoRow.id)
+      alert('Upload failed: ' + upErr.message); setUploading(null); e.target.value = ''; return
+    }
+
+    await supabase.from('fleet_vehicle_photos').update({ upload_state: 'complete' }).eq('id', photoRow.id)
     await loadData()
     setUploading(null)
     e.target.value = ''
@@ -84,11 +100,43 @@ export default function InstallWorkflow({ vehicle, jobId, onStatusChange }: Prop
 
   async function startTimer() {
     setSaving(true)
+
+    // Resume: check for active install timer in DB
+    const { data: active } = await supabase
+      .from('fleet_vehicle_time_logs').select('*')
+      .eq('vehicle_id', vehicle.id).eq('log_type', 'install').is('end_ts', null)
+      .maybeSingle()
+
+    if (active) {
+      setTimelog(active as FleetTimeLog)
+      sessionStorage.removeItem(pendingOpKey(vehicle.id))
+      onStatusChange('installing')
+      setSaving(false)
+      return
+    }
+
+    const opKey = pendingOpKey(vehicle.id)
+    const operationId = sessionStorage.getItem(opKey) ?? crypto.randomUUID()
+    sessionStorage.setItem(opKey, operationId)
+
     const { data, error } = await supabase.from('fleet_vehicle_time_logs').insert({
       vehicle_id: vehicle.id, fleet_user_id: fleetUser?.id ?? null,
       log_type: 'install', start_ts: new Date().toISOString(),
+      operation_id: operationId,
     }).select('*').single()
-    if (error) { alert(error.message); setSaving(false); return }
+
+    if (error) {
+      if (error.code === UNIQUE_VIOLATION) {
+        await loadData()
+        sessionStorage.removeItem(opKey)
+        onStatusChange('installing')
+        setSaving(false)
+        return
+      }
+      alert(error.message); setSaving(false); return
+    }
+
+    sessionStorage.removeItem(opKey)
     setTimelog(data as FleetTimeLog)
     await supabase.from('fleet_vehicles').update({ status: 'installing' }).eq('id', vehicle.id)
     onStatusChange('installing')
@@ -110,15 +158,28 @@ export default function InstallWorkflow({ vehicle, jobId, onStatusChange }: Prop
   }
 
   async function markComplete() {
-    const allUploaded = REQUIRED_AFTER.every(pt => photos.some(p => p.photo_type === pt))
+    const allUploaded = REQUIRED_AFTER.every(pt => photos.some(p => p.photo_type === pt && p.upload_state !== 'pending'))
     if (!allUploaded) {
-      const missing = REQUIRED_AFTER.filter(pt => !photos.some(p => p.photo_type === pt))
+      const missing = REQUIRED_AFTER.filter(pt => !photos.some(p => p.photo_type === pt && p.upload_state !== 'pending'))
         .map(pt => PHOTO_LABEL[pt]).join(', ')
       alert(`Missing required photos: ${missing}`)
       return
     }
     setSaving(true)
-    await supabase.from('fleet_vehicles').update({ status: 'install_complete' }).eq('id', vehicle.id)
+    setVersionConflict(false)
+
+    const { data: updated, error } = await supabase
+      .from('fleet_vehicles')
+      .update({ status: 'install_complete' })
+      .eq('id', vehicle.id)
+      .eq('version', vehicle.version ?? 1)
+      .select('id')
+
+    if (error) { alert(error.message); setSaving(false); return }
+    if (!updated?.length) {
+      setVersionConflict(true); setSaving(false); return
+    }
+
     onStatusChange('install_complete')
     setSaving(false)
   }
@@ -129,8 +190,8 @@ export default function InstallWorkflow({ vehicle, jobId, onStatusChange }: Prop
       ? Math.floor((new Date(timelog.end_ts).getTime() - new Date(timelog.start_ts!).getTime()) / 1000)
       : 0
 
-  const photoFor = (type: PhotoType) => photos.find(p => p.photo_type === type)
-  const allRequired = REQUIRED_AFTER.every(pt => photos.some(p => p.photo_type === pt))
+  const photoFor = (type: PhotoType) => photos.find(p => p.photo_type === type && p.upload_state !== 'failed')
+  const allRequired = REQUIRED_AFTER.every(pt => photos.some(p => p.photo_type === pt && p.upload_state !== 'pending'))
   const canStart = ['ready_for_install', 'installing'].includes(vehicle.status)
 
   const sectionStyle: React.CSSProperties = {
@@ -150,6 +211,12 @@ export default function InstallWorkflow({ vehicle, jobId, onStatusChange }: Prop
   return (
     <div>
       <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handleFile} style={{ display: 'none' }} />
+
+      {versionConflict && (
+        <div style={{ background: F.yellow + '18', border: `1px solid ${F.yellow}55`, borderRadius: 12, padding: '12px 14px', marginBottom: 12, fontSize: 13, color: F.yellow }}>
+          ⚠ This vehicle was updated by another user. Please refresh to see the latest state.
+        </div>
+      )}
 
       {/* Timer */}
       <div style={sectionStyle}>

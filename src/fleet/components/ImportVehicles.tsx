@@ -131,23 +131,35 @@ export default function ImportVehicles({ jobId, existingVins, onClose, onImport 
     const valid = preview.filter(r => !r._error && r.vin)
     if (valid.length === 0) { setError('No valid rows to import.'); return }
     setImporting(true)
-    const inserts = valid.map(r => ({
-      fleet_job_id: jobId,
-      vin: r.vin,
-      unit_number: r.unit_number || null,
-      year: r.year || null,
-      make: r.make || null,
-      model: r.model || null,
-      vehicle_type: r.vehicle_type || null,
-      department: r.department || null,
-      location: r.location || null,
-      notes: r.notes || null,
-      status: 'not_started',
+
+    // Atomic server-side import: normalizes VINs, skips duplicates, single transaction.
+    const payload = valid.map(r => ({
+      vin: r.vin, unit_number: r.unit_number, year: r.year, make: r.make,
+      model: r.model, vehicle_type: r.vehicle_type, department: r.department,
+      location: r.location, notes: r.notes,
     }))
-    const { data, error: err } = await supabase.from('fleet_vehicles').insert(inserts).select('*')
+
+    const { data: result, error: rpcErr } = await supabase.rpc('fleet_import_vehicles', {
+      p_job_id: jobId,
+      p_vehicles: payload,
+    })
+
+    if (rpcErr) { setImporting(false); setError(rpcErr.message); return }
+
+    const res = result as { inserted: number; skipped: number; errors: { vin: string; error: string }[] }
+
+    const { data: newVehicles } = await supabase
+      .from('fleet_vehicles').select('*').eq('fleet_job_id', jobId)
+      .order('created_at', { ascending: false }).limit(res.inserted)
+
     setImporting(false)
-    if (err) { setError(err.message); return }
-    onImport(data as FleetVehicle[])
+
+    if (res.skipped > 0) {
+      const dupVins = res.errors.slice(0, 5).map((e: { vin: string }) => e.vin).join(', ')
+      setError(`${res.skipped} duplicate VIN${res.skipped > 1 ? 's' : ''} skipped: ${dupVins}${res.skipped > 5 ? '…' : ''}`)
+    }
+
+    onImport((newVehicles ?? []) as FleetVehicle[])
     setStep('done')
   }
 

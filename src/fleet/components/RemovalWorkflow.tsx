@@ -7,6 +7,12 @@ import { PHOTO_LABEL, REQUIRED_BEFORE } from '../lib/fleetTypes'
 
 const BEFORE_PHOTOS: PhotoType[] = ['before_front', 'before_driver', 'before_passenger', 'before_rear']
 
+// Supabase unique-constraint violation code
+const UNIQUE_VIOLATION = '23505'
+
+// SessionStorage key for pending timer operation (survives network drops + page refresh)
+function pendingOpKey(vehicleId: string) { return `fleet-removal-op-${vehicleId}` }
+
 function fmtSecs(s: number) {
   const h = Math.floor(s / 3600)
   const m = Math.floor((s % 3600) / 60)
@@ -29,6 +35,7 @@ export default function RemovalWorkflow({ vehicle, jobId, onStatusChange }: Prop
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState<PhotoType | null>(null)
+  const [versionConflict, setVersionConflict] = useState(false)
   const [, setTick] = useState(0)
   const fileRef = useRef<HTMLInputElement>(null)
   const pendingType = useRef<PhotoType | null>(null)
@@ -51,11 +58,10 @@ export default function RemovalWorkflow({ vehicle, jobId, onStatusChange }: Prop
     ])
 
     const rawPhotos = (photoData ?? []) as FleetVehiclePhoto[]
-    const withUrls = rawPhotos.map(p => ({
+    setPhotos(rawPhotos.map(p => ({
       ...p,
       publicUrl: supabase.storage.from('fleet-photos').getPublicUrl(p.storage_path).data.publicUrl,
-    }))
-    setPhotos(withUrls)
+    })))
 
     const log = logData?.[0] as FleetTimeLog | undefined
     if (log) {
@@ -76,14 +82,26 @@ export default function RemovalWorkflow({ vehicle, jobId, onStatusChange }: Prop
     const type = pendingType.current
     if (!file || !type) return
     setUploading(type)
+
     const path = `${jobId}/${vehicle.id}/${type}-${Date.now()}.jpg`
-    const { error: upErr } = await supabase.storage.from('fleet-photos').upload(path, file)
-    if (upErr) { alert('Upload failed: ' + upErr.message); setUploading(null); e.target.value = ''; return }
-    const { error: dbErr } = await supabase.from('fleet_vehicle_photos').insert({
+
+    // Insert DB record as 'pending' first so we have a record even if upload is interrupted
+    const { data: photoRow, error: dbErr1 } = await supabase.from('fleet_vehicle_photos').insert({
       vehicle_id: vehicle.id, fleet_job_id: jobId, photo_type: type,
       storage_path: path, uploaded_by: fleetUser?.id ?? null,
-    })
-    if (dbErr) { alert('Save failed: ' + dbErr.message); setUploading(null); e.target.value = ''; return }
+      upload_state: 'pending',
+    }).select('id').single()
+
+    if (dbErr1) { alert('Save failed: ' + dbErr1.message); setUploading(null); e.target.value = ''; return }
+
+    const { error: upErr } = await supabase.storage.from('fleet-photos').upload(path, file)
+    if (upErr) {
+      // Mark upload as failed so it can be retried or cleaned up
+      await supabase.from('fleet_vehicle_photos').update({ upload_state: 'failed' }).eq('id', photoRow.id)
+      alert('Upload failed: ' + upErr.message); setUploading(null); e.target.value = ''; return
+    }
+
+    await supabase.from('fleet_vehicle_photos').update({ upload_state: 'complete' }).eq('id', photoRow.id)
     await loadData()
     setUploading(null)
     e.target.value = ''
@@ -91,11 +109,45 @@ export default function RemovalWorkflow({ vehicle, jobId, onStatusChange }: Prop
 
   async function startTimer() {
     setSaving(true)
+
+    // Resume: check for active timer already in DB (handles refresh after network drop)
+    const { data: active } = await supabase
+      .from('fleet_vehicle_time_logs').select('*')
+      .eq('vehicle_id', vehicle.id).eq('log_type', 'removal').is('end_ts', null)
+      .maybeSingle()
+
+    if (active) {
+      setTimelog(active as FleetTimeLog)
+      sessionStorage.removeItem(pendingOpKey(vehicle.id))
+      onStatusChange('removing')
+      setSaving(false)
+      return
+    }
+
+    // Idempotency: reuse pending operation_id if we retrying after a network failure
+    const opKey = pendingOpKey(vehicle.id)
+    const operationId = sessionStorage.getItem(opKey) ?? crypto.randomUUID()
+    sessionStorage.setItem(opKey, operationId)
+
     const { data, error } = await supabase.from('fleet_vehicle_time_logs').insert({
       vehicle_id: vehicle.id, fleet_user_id: fleetUser?.id ?? null,
       log_type: 'removal', start_ts: new Date().toISOString(),
+      operation_id: operationId,
     }).select('*').single()
-    if (error) { alert(error.message); setSaving(false); return }
+
+    if (error) {
+      if (error.code === UNIQUE_VIOLATION) {
+        // Constraint fired: either active timer or duplicate operation_id — reload to surface it
+        await loadData()
+        sessionStorage.removeItem(opKey)
+        onStatusChange('removing')
+        setSaving(false)
+        return
+      }
+      alert(error.message); setSaving(false); return
+    }
+
+    sessionStorage.removeItem(opKey)
     setTimelog(data as FleetTimeLog)
     await supabase.from('fleet_vehicles').update({ status: 'removing' }).eq('id', vehicle.id)
     onStatusChange('removing')
@@ -117,10 +169,30 @@ export default function RemovalWorkflow({ vehicle, jobId, onStatusChange }: Prop
   }
 
   async function markComplete() {
-    const requiredUploaded = REQUIRED_BEFORE.every(pt => photos.some(p => p.photo_type === pt))
+    const requiredUploaded = REQUIRED_BEFORE.every(pt => photos.some(p => p.photo_type === pt && p.upload_state !== 'pending'))
     if (!requiredUploaded) { alert('Please upload all required before photos first (front, driver, passenger, rear).'); return }
     setSaving(true)
-    await supabase.from('fleet_vehicles').update({ status: 'ready_for_install' }).eq('id', vehicle.id)
+    setVersionConflict(false)
+
+    // Optimistic lock: only update if version hasn't changed since we loaded the vehicle
+    const { data: updated, error } = await supabase
+      .from('fleet_vehicles')
+      .update({ status: 'ready_for_install' })
+      .eq('id', vehicle.id)
+      .eq('version', vehicle.version ?? 1)
+      .select('id')
+
+    if (error) {
+      // State machine rejected the transition (P0001) or other DB error
+      alert(error.message); setSaving(false); return
+    }
+    if (!updated?.length) {
+      // Version mismatch: someone else updated this vehicle — surface conflict
+      setVersionConflict(true)
+      setSaving(false)
+      return
+    }
+
     onStatusChange('ready_for_install')
     setSaving(false)
   }
@@ -131,9 +203,9 @@ export default function RemovalWorkflow({ vehicle, jobId, onStatusChange }: Prop
       ? Math.floor((new Date(timelog.end_ts).getTime() - new Date(timelog.start_ts!).getTime()) / 1000)
       : 0
 
-  const photoFor = (type: PhotoType) => photos.find(p => p.photo_type === type)
-  const damagePhotos = photos.filter(p => p.photo_type === 'before_damage')
-  const allRequired = REQUIRED_BEFORE.every(pt => photos.some(p => p.photo_type === pt))
+  const photoFor = (type: PhotoType) => photos.find(p => p.photo_type === type && p.upload_state !== 'failed')
+  const damagePhotos = photos.filter(p => p.photo_type === 'before_damage' && p.upload_state !== 'failed')
+  const allRequired = REQUIRED_BEFORE.every(pt => photos.some(p => p.photo_type === pt && p.upload_state !== 'pending'))
 
   const sectionStyle: React.CSSProperties = {
     background: F.surface, border: `1px solid ${F.border}`, borderRadius: 16, padding: 18, marginBottom: 12,
@@ -142,6 +214,12 @@ export default function RemovalWorkflow({ vehicle, jobId, onStatusChange }: Prop
   return (
     <div>
       <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handleFile} style={{ display: 'none' }} />
+
+      {versionConflict && (
+        <div style={{ background: F.yellow + '18', border: `1px solid ${F.yellow}55`, borderRadius: 12, padding: '12px 14px', marginBottom: 12, fontSize: 13, color: F.yellow }}>
+          ⚠ This vehicle was updated by another user. Please refresh to see the latest state.
+        </div>
+      )}
 
       {/* Before Photos */}
       <div style={sectionStyle}>
