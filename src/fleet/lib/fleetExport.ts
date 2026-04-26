@@ -90,6 +90,14 @@ function sanitizeFolderName(name: string): string {
     .slice(0, 60)
 }
 
+function fetchWithTimeout(url: string, ms: number): Promise<ArrayBuffer> {
+  const controller = new AbortController()
+  const id = setTimeout(() => controller.abort(), ms)
+  return fetch(url, { signal: controller.signal })
+    .then(r => { clearTimeout(id); if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.arrayBuffer() })
+    .catch(e => { clearTimeout(id); throw e.name === 'AbortError' ? new Error('Timeout after 30s') : e })
+}
+
 // ── Data helpers ──────────────────────────────────────────────────────────────
 
 function fmtDuration(logs: FleetTimeLog[], logType: 'removal' | 'install'): string {
@@ -224,6 +232,7 @@ async function resolvePhotoUrls(
         .from('fleet-photos')
         .createSignedUrl(p.storage_path, expirySecs)
         .then(({ data }) => data?.signedUrl ?? '')
+        .catch(() => '')
     })
   )
   const result: PhotoUrlMap = {}
@@ -401,6 +410,8 @@ export async function exportPhotosZip(
   const { vehicles, photos, logs, users } =
     await fetchJobData(supabase, meta.jobId, meta.statusFilter ?? 'all')
   if (!vehicles.length) throw new Error('No vehicles match the selected filter.')
+  if (vehicles.length === 2000) throw new Error('Vehicle export limit reached (2,000). Apply a filter to reduce the selection.')
+  if (photos.length === 10000) throw new Error('Photo export limit reached (10,000). Apply a filter to reduce the selection.')
 
   // ── 2. Resolve photo URLs ───────────────────────────────────────────────────
   prog('urls', 0, vehicles.length, `Resolving URLs for ${vehicles.length} vehicles…`)
@@ -417,6 +428,8 @@ export async function exportPhotosZip(
     uploadedAt: string
     vehicleFolder: string  // e.g. "T-042 - 1HGBH41JXMN109186"
   }
+
+  const failedDownloads: { vin: string; unit: string; photoType: string; error: string }[] = []
 
   const tasks: PhotoTask[] = []
   for (const v of vehicles) {
@@ -435,8 +448,14 @@ export async function exportPhotosZip(
           uploadedAt: slot.created_at,
           vehicleFolder: label,
         })
+      } else if (!url && slot) {
+        failedDownloads.push({ vin: v.vin, unit: v.unit_number ?? '', photoType: pt, error: 'URL resolution failed' })
       }
     }
+  }
+
+  if (tasks.length > 300) {
+    throw new Error(`Export contains ${tasks.length} photos. Max 300 for browser export. Reduce selection or use server export.`)
   }
 
   // ── 4. Download photos in batches and build ZIP ────────────────────────────
@@ -444,17 +463,13 @@ export async function exportPhotosZip(
   const zip = new JSZip()
   const photosRoot = zip.folder('Fleet-Photos')!
 
-  const failedDownloads: { vin: string; unit: string; photoType: string; error: string }[] = []
   let downloaded = 0
   const BATCH = 10
 
   for (let i = 0; i < tasks.length; i += BATCH) {
     const batch = tasks.slice(i, i + BATCH)
     const results = await Promise.allSettled(
-      batch.map(t => fetch(t.url).then(r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        return r.arrayBuffer()
-      }))
+      batch.map(t => fetchWithTimeout(t.url, 30000))
     )
 
     results.forEach((result, j) => {
@@ -543,7 +558,7 @@ export async function exportPhotosZip(
   a.href = url
   a.download = filename
   a.click()
-  setTimeout(() => URL.revokeObjectURL(url), 15000)
+  setTimeout(() => URL.revokeObjectURL(url), 300000)
 
   // Also export a Fleet CSV alongside the ZIP (same data, easy reference)
   const now = new Date().toISOString()

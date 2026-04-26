@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useFleetAuth } from '../context/FleetAuthContext'
 import { F } from '../lib/fleetColors'
@@ -155,6 +155,18 @@ export default function ExportPanel({ jobId, jobName, customer }: Props) {
   const [estimate, setEstimate] = useState<{ vehicleCount: number; photoCount: number } | null>(null)
   const [estimating, setEstimating] = useState(false)
 
+  const isAnyExporting = dailyLoading || fleetLoading || zipLoading
+
+  useEffect(() => {
+    if (!zipLoading) return
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = 'Export in progress. Leaving will cancel it.'
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [zipLoading])
+
   const baseMeta = {
     jobId,
     jobName,
@@ -211,7 +223,16 @@ export default function ExportPanel({ jobId, jobName, customer }: Props) {
         p => setZipProgress(p),
       )
     } catch (e) {
-      setZipError((e as Error).message)
+      const raw = (e as Error).message ?? ''
+      const lower = raw.toLowerCase()
+      const msg = lower.includes('memory') || lower.includes('out of memory')
+        ? 'Export too large for browser. Reduce selection and try again.'
+        : lower.includes('timeout') || lower.includes('aborted')
+          ? 'Some files failed to download (timeout). Check connection and retry.'
+          : lower.includes('cancel')
+            ? 'Export cancelled.'
+            : raw
+      setZipError(msg)
       setZipProgress(null)
     } finally {
       setZipLoading(false)
@@ -237,7 +258,7 @@ export default function ExportPanel({ jobId, jobName, customer }: Props) {
         />
         <BucketToggle value={dailyBucket} onChange={setDailyBucket} />
         {dailyError && <ErrorBanner msg={dailyError} onDismiss={() => setDailyError(null)} />}
-        <ExportButton onClick={handleDailyCSV} disabled={dailyLoading} loading={dailyLoading} label="Export Daily CSV" icon="📊" />
+        <ExportButton onClick={handleDailyCSV} disabled={isAnyExporting} loading={dailyLoading} label="Export Daily CSV" icon="📊" />
       </SectionCard>
 
       {/* Fleet CSV */}
@@ -249,7 +270,7 @@ export default function ExportPanel({ jobId, jobName, customer }: Props) {
         <FilterSelect value={fleetFilter} onChange={v => setFleetFilter(v)} />
         <BucketToggle value={fleetBucket} onChange={setFleetBucket} />
         {fleetError && <ErrorBanner msg={fleetError} onDismiss={() => setFleetError(null)} />}
-        <ExportButton onClick={handleFleetCSV} disabled={fleetLoading} loading={fleetLoading} label="Export Fleet CSV" icon="📊" />
+        <ExportButton onClick={handleFleetCSV} disabled={isAnyExporting} loading={fleetLoading} label="Export Fleet CSV" icon="📊" />
       </SectionCard>
 
       {/* Photos ZIP */}
@@ -264,23 +285,24 @@ export default function ExportPanel({ jobId, jobName, customer }: Props) {
         {/* Size estimate */}
         <button
           onClick={handleEstimate}
-          disabled={estimating || zipLoading}
+          disabled={estimating || isAnyExporting}
           style={{ width: '100%', padding: '10px 0', borderRadius: 10, background: F.surface2, color: F.textSec, border: `1px solid ${F.border}`, fontSize: 13, cursor: 'pointer', marginBottom: 10 }}
         >
           {estimating ? 'Estimating…' : estimate ? '↻ Re-estimate Size' : '📏 Estimate Size Before Exporting'}
         </button>
 
         {estimate && (
-          <div style={{ padding: '10px 12px', borderRadius: 10, background: F.surface2, border: `1px solid ${F.border}`, marginBottom: 10 }}>
+          <div style={{ padding: '10px 12px', borderRadius: 10, background: F.surface2, border: `1px solid ${estimate.photoCount > 300 ? F.red : F.border}`, marginBottom: 10 }}>
             <div style={{ fontSize: 13, color: F.text, fontWeight: 600 }}>
               {estimate.vehicleCount} vehicles · {fmtPhotoCount(estimate.photoCount)} photos
             </div>
-            <div style={{ fontSize: 12, color: F.textSec, marginTop: 2 }}>
-              Estimated ZIP size: ~{estimateMB}MB
-            </div>
-            {(estimateMB ?? 0) > 500 && (
-              <div style={{ fontSize: 12, color: F.yellow, marginTop: 6, fontWeight: 600 }}>
-                ⚠ Large export — may take several minutes and use significant memory.
+            {estimate.photoCount > 300 ? (
+              <div style={{ fontSize: 12, color: F.red, marginTop: 4, fontWeight: 600 }}>
+                Too many photos for browser export. Apply a filter.
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, color: F.textSec, marginTop: 2 }}>
+                Estimated ZIP size: ~{estimateMB}MB
               </div>
             )}
           </div>
@@ -296,7 +318,7 @@ export default function ExportPanel({ jobId, jobName, customer }: Props) {
 
         <ExportButton
           onClick={handleZipExport}
-          disabled={zipLoading}
+          disabled={isAnyExporting || (estimate !== null && estimate.photoCount > 300)}
           loading={zipLoading}
           label="Export Photos ZIP"
           icon="🗂"
